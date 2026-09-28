@@ -784,7 +784,7 @@ class huifu_plugin
 			return ['type'=>'error','msg'=>'被扫下单失败！'.$e->getMessage()];
 		}
 
-		if($result['trans_stat'] == 'S'){
+		if($result['trans_stat'] == 'S' && ($result['req_seq_id'] ?? '') == TRADE_NO && epay_callback_money_match(($result['trans_amt'] ?? null), $order['realmoney'])){
 			if(isset($result['alipay_response'])){
 				$buyer = json_decode($result['alipay_response'], true)['buyer_id'];
 			}elseif(isset($result['wx_response'])){
@@ -811,7 +811,7 @@ class huifu_plugin
 				}
 				$retry++;
 			}
-			if($success){
+			if($success && ($result['org_req_seq_id'] ?? '') == TRADE_NO && epay_callback_money_match(($result['trans_amt'] ?? null), $order['realmoney'])){
 				if(isset($result['alipay_response'])){
 					$buyer = json_decode($result['alipay_response'], true)['buyer_id'];
 				}elseif(isset($result['wx_response'])){
@@ -870,7 +870,7 @@ class huifu_plugin
 
 		if($client->checkNotifySign($_POST['resp_data'], $_POST['sign'])){
 			if ($data['trans_stat'] == 'S') {
-				if($data['req_seq_id'] == TRADE_NO){
+				if($data['req_seq_id'] == TRADE_NO && epay_callback_money_match(($data['trans_amt'] ?? null), $order['realmoney'])){
 					$api_trade_no = $data['hf_seq_id'];
 					$bill_trade_no = $data['out_trans_id'];
 					$bill_mch_trade_no = $data['party_order_id'];

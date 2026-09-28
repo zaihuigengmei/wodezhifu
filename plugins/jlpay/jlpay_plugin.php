@@ -501,7 +501,7 @@ class jlpay_plugin
 			return ['type'=>'error','msg'=>'被扫下单失败！'.$e->getMessage()];
 		}
 
-		if($result['status'] == '2'){
+		if($result['status'] == '2' && ($result['out_trade_no'] ?? '') == TRADE_NO && epay_callback_cent_match(($result['total_fee'] ?? null), $order['realmoney'])){
 			$bill_trade_no = $result['chn_transaction_id'];
 			if($order['type'] == 1 && substr($bill_trade_no, 0, 4) != date('Y') && substr($bill_trade_no, 2, 4) == date('Y')) $bill_trade_no = substr($bill_trade_no, 2);
 			processNotify($order, $result['transaction_id'], $result['sub_openid'], $bill_trade_no);
@@ -525,7 +525,7 @@ class jlpay_plugin
 				}
 				$retry++;
 			}
-			if($success){
+			if($success && ($result['out_trade_no'] ?? '') == TRADE_NO && epay_callback_cent_match(($result['total_fee'] ?? null), $order['realmoney'])){
 				$bill_trade_no = $result['chn_transaction_id'];
 				if($order['type'] == 1 && substr($bill_trade_no, 0, 4) != date('Y') && substr($bill_trade_no, 2, 4) == date('Y')) $bill_trade_no = substr($bill_trade_no, 2);
 				processNotify($order, $result['transaction_id'], $result['sub_openid'], $bill_trade_no);
@@ -584,7 +584,7 @@ class jlpay_plugin
 				$buyer = $arr['sub_openid'];
 				$bill_trade_no = $arr['chn_transaction_id'];
 				if($order['type'] == 1 && substr($bill_trade_no, 0, 4) != date('Y') && substr($bill_trade_no, 2, 4) == date('Y')) $bill_trade_no = substr($bill_trade_no, 2);
-				if($out_trade_no == TRADE_NO){
+				if($out_trade_no == TRADE_NO && epay_callback_cent_match($money, $order['realmoney'])){
 					processNotify($order, $api_trade_no, $buyer, $bill_trade_no);
 				}
 			}

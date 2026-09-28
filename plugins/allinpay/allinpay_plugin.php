@@ -475,7 +475,7 @@ class allinpay_plugin
 				$money = $_POST['initamt'];
 				$buyer = $_POST['acct'];
 				$bill_trade_no = $_POST['chnltrxid'];
-				if($out_trade_no == TRADE_NO){
+				if($out_trade_no == TRADE_NO && epay_callback_cent_match($money, $order['realmoney'])){
 					processNotify($order, $api_trade_no, $buyer, $bill_trade_no);
 				}
 			}

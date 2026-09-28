@@ -477,7 +477,9 @@ class lakala_plugin
 			$result = $client->execute('/api/v3/labs/trans/micropay', $params);
 			if($client->res_code == 'BBS00000'){
 				$buyer = isset($result['acc_resp_fields']['open_id'])?$result['acc_resp_fields']['open_id']:$result['acc_resp_fields']['user_id'];
+				if(($result['out_trade_no'] ?? '') == TRADE_NO && isset($result['total_amount']) && (int)$result['total_amount'] === (int)round($order['realmoney']*100)){
 				processNotify($order, $result['trade_no'], $buyer, $result['acc_trade_no']);
+			}
 				return ['type'=>'scan','data'=>['type'=>$order['typename'], 'trade_no'=>$result['out_trade_no'], 'api_trade_no'=>$result['trade_no'], 'buyer'=>$buyer, 'money'=>strval(round($result['total_amount']/100, 2))]];
 			}else{
 				$retry = 0;
@@ -498,7 +500,9 @@ class lakala_plugin
 					$retry++;
 				}
 				if($success){
+					if(($result['out_trade_no'] ?? '') == TRADE_NO && isset($result['total_amount']) && (int)$result['total_amount'] === (int)round($order['realmoney']*100)){
 					processNotify($order, $result['trade_no'], $result['user_id2'], $result['acc_trade_no']);
+				}
 					return ['type'=>'scan','data'=>['type'=>$order['typename'], 'trade_no'=>$result['out_trade_no'], 'api_trade_no'=>$result['trade_no'], 'buyer'=>$result['user_id2'], 'money'=>strval(round($result['total_amount']/100, 2))]];
 				}else{
 					try{
@@ -568,7 +572,7 @@ class lakala_plugin
 			$bill_trade_no = $data['acc_trade_no'];
 
 			if($data['trade_status'] == 'SUCCESS'){
-				if($out_trade_no == TRADE_NO){
+				if($out_trade_no == TRADE_NO && epay_callback_cent_match($total_amount, $order['realmoney'])){
 					processNotify($order, $api_trade_no, $buyer, $bill_trade_no);
 				}
 			}
@@ -609,7 +613,7 @@ class lakala_plugin
 			$bill_trade_no = $data['order_trade_info']['acc_trade_no'];
 
 			if($data['order_status'] == '2'){
-				if($out_trade_no == TRADE_NO){
+				if($out_trade_no == TRADE_NO && epay_callback_cent_match($total_amount, $order['realmoney'])){
 					processNotify($order, $api_trade_no, $buyer, $bill_trade_no);
 				}
 			}

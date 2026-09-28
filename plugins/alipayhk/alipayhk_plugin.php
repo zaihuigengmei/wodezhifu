@@ -231,7 +231,7 @@ class alipayhk_plugin
 			$total_fee = $_POST['total_fee'];
 
 			if ($_POST['trade_status'] == 'TRADE_FINISHED' || $_POST['trade_status'] == 'TRADE_SUCCESS') {
-				if($out_trade_no == TRADE_NO){
+				if($out_trade_no == TRADE_NO && epay_callback_money_match($total_fee, round($order['realmoney'] / ($channel['currency_rate'] ?: 1), 2))){
 					processNotify($order, $trade_no, $buyer_id);
 				}
 			}
@@ -267,7 +267,7 @@ class alipayhk_plugin
 			$total_fee = $_GET['total_fee'];
 
 			if($_GET['trade_status'] == 'TRADE_FINISHED' || $_GET['trade_status'] == 'TRADE_SUCCESS') {
-				if($out_trade_no == TRADE_NO){
+				if($out_trade_no == TRADE_NO && epay_callback_money_match($total_fee, round($order['realmoney'] / ($channel['currency_rate'] ?: 1), 2))){
                     processReturn($order, $trade_no, $buyer_id);
                 }else{
 					return ['type'=>'error','msg'=>'订单信息校验失败'];

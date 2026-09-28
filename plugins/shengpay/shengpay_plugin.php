@@ -386,7 +386,7 @@ class shengpay_plugin
 				$payerInfo = json_decode($data['payerInfo'], true);
 				$buyer = $payerInfo['openid'];
 				$bill_trade_no = $payerInfo['officOrderNum'];
-				if($out_trade_no == TRADE_NO){
+				if($out_trade_no == TRADE_NO && epay_callback_cent_match(($data['totalFee'] ?? $data['amount'] ?? null), $order['realmoney']) && (!isset($data['currency']) || strtoupper((string)$data['currency']) === 'CNY')){
 					processNotify($order, $trade_no, $buyer, $bill_trade_no);
 				}
 				return ['type'=>'html','data'=>'SUCCESS'];

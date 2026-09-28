@@ -147,7 +147,7 @@ class alipayrp_plugin
 					$trans_amount = $bizContent['trans_amount']; //转账金额
 	
 					$order = $DB->getRow("SELECT * FROM pre_order WHERE trade_no='$out_trade_no' limit 1");
-					if($order && $bizContent['status'] == 'SUCCESS'){
+					if($order && $bizContent['status'] == 'SUCCESS' && epay_callback_money_match($trans_amount, $order['realmoney'])){
 						if($order['settle']<=1){
 							usleep(300000);
 							$out_biz_no = date("YmdHis").rand(11111,99999);

@@ -493,7 +493,7 @@ class easypay_plugin
 				$money = $data['respOrderInfo']['transAmount'];
 				$buyer = $data['respOrderInfo']['userId'];
 				$bill_trade_no = $data['respOrderInfo']['pcTrace'];
-				if($out_trade_no == TRADE_NO){
+				if($out_trade_no == TRADE_NO && epay_callback_cent_match($money, $order['realmoney'])){
 					processNotify($order, $api_trade_no, $buyer, $bill_trade_no);
 				}
 			}

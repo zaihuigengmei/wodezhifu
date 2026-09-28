@@ -639,7 +639,9 @@ class alipayd_plugin
 							}
 						}
 					}
+					if(epay_callback_money_match($total_amount, $order['realmoney'])){
 					processNotify($order, $trade_no, $buyer_id);
+				}
 				}
 			}
 			return ['type'=>'html','data'=>'success'];
@@ -725,7 +727,9 @@ class alipayd_plugin
 				$buyer_id = $result['buyer_user_id'];
 				$total_amount = $result['total_amount'];
 
-				processNotify($order, $trade_no, $buyer_id);
+				if(epay_callback_money_match($total_amount, $order['realmoney'])){
+					processNotify($order, $trade_no, $buyer_id);
+				}
 			}
 			return ['type'=>'html','data'=>'success'];
 		}
@@ -1004,7 +1008,9 @@ class alipayd_plugin
 					}
 				}
 				
-				processNotify($order, $out_trade_no, $buyer_id);
+				if(epay_callback_money_match($total_amount, $order['realmoney'])){
+					processNotify($order, $out_trade_no, $buyer_id);
+				}
 			}
 			return ['type'=>'html','data'=>'success'];
 		}

@@ -462,7 +462,7 @@ class adapay_plugin
 				$buyer = $_data['expend']['sub_open_id'];
 				$bill_trade_no = $_data['out_trans_id'];
 				$bill_mch_trade_no = $_data['party_order_id'];
-				if ($trade_no == TRADE_NO) {
+				if ($trade_no == TRADE_NO && epay_callback_money_match($orderAmount, $order['realmoney'])) {
 					processNotify($order, $api_trade_no, $buyer, $bill_trade_no, $bill_mch_trade_no);
 				}
 				return ['type'=>'html','data'=>'Ok'];

@@ -368,7 +368,7 @@ class hlpay_plugin
 				$trade_no = $data['payOrderNo'];
 				$bill_trade_no = $data['channelOrderNo'];
 				$bill_mch_trade_no = $data['instOrderNo'];
-				if($out_trade_no == TRADE_NO){
+				if($out_trade_no == TRADE_NO && epay_callback_money_match(($data['amount'] ?? null), $order['realmoney'])){
 					processNotify($order, $trade_no, null, $bill_trade_no, $bill_mch_trade_no);
 				}
 				return ['type'=>'html','data'=>'success'];

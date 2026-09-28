@@ -141,7 +141,7 @@ class paypal_plugin
 			$out_trade_no = $captures['invoice_id'];
 			$buyer = $result['payer']['email_address'];
 
-			if($out_trade_no == TRADE_NO){
+			if($out_trade_no == TRADE_NO && epay_callback_money_match($amount, $order['realmoney']) && strtoupper((string)$captures['seller_receivable_breakdown']['gross_amount']['currency_code']) === 'USD'){
 				processReturn($order, $trade_no, $buyer);
 			}else{
 				return ['type'=>'error','msg'=>'订单信息校验失败'];

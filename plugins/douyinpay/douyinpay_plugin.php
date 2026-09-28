@@ -283,7 +283,7 @@ class douyinpay_plugin
 		}
 
 		if ($data['trade_state'] == 'SUCCESS') {
-			if($data['out_trade_no'] == TRADE_NO){
+			if($data['out_trade_no'] == TRADE_NO && isset($data['amount']['total']) && (int)$data['amount']['total'] === (int)round($order['realmoney']*100) && (!isset($data['amount']['currency']) || strtoupper($data['amount']['currency']) === 'CNY')){
 				processNotify($order, $data['transaction_id'], $data['payer']['openid']);
 			}
 		}

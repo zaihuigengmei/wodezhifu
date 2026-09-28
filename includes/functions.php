@@ -622,6 +622,25 @@ function checkBlockUser($openid, $trade_no){
 	return false;
 }
 
+function epay_callback_money_match($paid, $realmoney){
+	if($paid === null || $paid === '') return false;
+	$paid = str_replace([',', ' '], '', (string)$paid);
+	if(!is_numeric($paid) || !is_numeric($realmoney)) return false;
+	$paidFloat = round((float)$paid, 2);
+	$realFloat = round((float)$realmoney, 2);
+	if(abs($paidFloat - $realFloat) < 0.01) return true; // 元
+	$paidCent = (int)round((float)$paid);
+	$realCent = (int)round($realFloat * 100);
+	return $paidCent === $realCent; // 分
+}
+
+function epay_callback_cent_match($paid, $realmoney){
+	if($paid === null || $paid === '') return false;
+	$paid = str_replace([',', ' '], '', (string)$paid);
+	if(!is_numeric($paid) || !is_numeric($realmoney)) return false;
+	return (int)round((float)$paid) === (int)round((float)$realmoney * 100);
+}
+
 function processReturn($order, $api_trade_no=null, $buyer=null, $bill_trade_no = null, $bill_mch_trade_no = null, $end_time = null){
 	\lib\Payment::processOrder(false, $order, $api_trade_no, $buyer, $bill_trade_no, $bill_mch_trade_no, $end_time);
 }

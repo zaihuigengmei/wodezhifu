@@ -400,7 +400,7 @@ class wxpayng_plugin
 		$client = new \WeChatPay\V3\GlobalPaymentService($wechatpay_config);
 		try{
 			$result = $client->microPay($params);
-			if($result['trade_state'] == 'SUCCESS'){
+			if($result['trade_state'] == 'SUCCESS' && ($result['out_trade_no'] ?? '') == TRADE_NO && isset($result['amount']['total']) && (int)$result['amount']['total'] === (int)round($order['realmoney']*100) && (!isset($result['amount']['currency']) || strtoupper($result['amount']['currency']) === 'CNY')){
 				processNotify($order, $result['id'], $result['payer']['openid']);
 				return ['type'=>'scan','data'=>['type'=>$order['typename'], 'trade_no'=>$result['out_trade_no'], 'api_trade_no'=>$result['id'], 'buyer'=>$result['payer']['openid'], 'money'=>strval(round($result['amount']['total']/100, 2))]];
 			}elseif($result['trade_state'] == 'USERPAYING'){
@@ -422,7 +422,7 @@ class wxpayng_plugin
 					}
 					$retry++;
 				}
-				if($success){
+				if($success && ($result['out_trade_no'] ?? '') == TRADE_NO && isset($result['amount']['total']) && (int)$result['amount']['total'] === (int)round($order['realmoney']*100) && (!isset($result['amount']['currency']) || strtoupper($result['amount']['currency']) === 'CNY')){
 					processNotify($order, $result['id'], $result['payer']['openid']);
 					return ['type'=>'scan','data'=>['type'=>$order['typename'], 'trade_no'=>$result['out_trade_no'], 'api_trade_no'=>$result['id'], 'buyer'=>$result['payer']['openid'], 'money'=>strval(round($result['amount']['total']/100, 2))]];
 				}else{
@@ -477,7 +477,7 @@ class wxpayng_plugin
 		}
 
 		if ($data['trade_state'] == 'SUCCESS') {
-			if($data['out_trade_no'] == TRADE_NO){
+			if($data['out_trade_no'] == TRADE_NO && isset($data['amount']['total']) && (int)$data['amount']['total'] === (int)round($order['realmoney']*100) && (!isset($data['amount']['currency']) || strtoupper($data['amount']['currency']) === 'CNY')){
 				processNotify($order, $data['id'], $data['payer']['openid']);
 			}
 		}

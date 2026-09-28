@@ -612,7 +612,7 @@ class yinyingtong_plugin
 				$ext = @unserialize($order['ext'], ['allowed_classes'=>false]) ?: [];
 				$ext['transcode'] = $data['transcode'];
 
-				if ($out_trade_no == TRADE_NO) {
+				if ($out_trade_no == TRADE_NO && epay_callback_money_match($money, $order['realmoney'])) {
 					processNotify($order, $api_trade_no, $null, $bill_trade_no);
 					\lib\Payment::updateOrderExt(TRADE_NO, $ext);
 				}
@@ -644,7 +644,7 @@ class yinyingtong_plugin
 				$bill_mch_trade_no = $data['biz_content']['data'][0]['bank_order_id'];
 				$buyer = $data['biz_content']['data'][0]['bank_user_id'];
 
-				if ($out_trade_no == TRADE_NO) {
+				if ($out_trade_no == TRADE_NO && epay_callback_money_match($money, $order['realmoney'])) {
 					processNotify($order, $api_trade_no, $buyer, null, $bill_mch_trade_no);
 				}
 			}

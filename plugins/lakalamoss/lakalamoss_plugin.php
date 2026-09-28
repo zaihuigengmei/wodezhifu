@@ -346,7 +346,7 @@ class lakalamoss_plugin
 			$money = $data['total_amount'];
 			$buyer = $data['user_id2'];
 			$bill_trade_no = $data['acc_trade_no'];
-			if($out_trade_no == TRADE_NO){
+			if($out_trade_no == TRADE_NO && epay_callback_cent_match($money, $order['realmoney'])){
 				processNotify($order, $api_trade_no, $buyer, $bill_trade_no);
 			}
 		}

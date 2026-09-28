@@ -458,7 +458,7 @@ class xsy_plugin
             $buyer = $arr['respData']['buyerId'];
             $bill_trade_no = $arr['respData']['transactionId'];
             $bill_mch_trade_no = $arr['respData']['thirdPartyUuid'];
-            if($out_trade_no == TRADE_NO){
+            if($out_trade_no == TRADE_NO && epay_callback_cent_match(($arr['respData']['amt'] ?? null), $order['realmoney'])){
                 processNotify($order, $api_trade_no, $buyer, $bill_trade_no, $bill_mch_trade_no);
             }
             return ['type' => 'html', 'data' => '{"code":"success"}'];

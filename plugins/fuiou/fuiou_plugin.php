@@ -379,7 +379,7 @@ class fuiou_plugin
 			$money = $arr['order_amt'];
 			$buyer = $arr['reserved_buyer_logon_id'];
 			$bill_mch_trade_no = $arr['reserved_channel_order_id'];
-			if($out_trade_no == TRADE_NO){
+			if($out_trade_no == TRADE_NO && epay_callback_cent_match($money, $order['realmoney'])){
 				processNotify($order, $trade_no, $buyer, null, $bill_mch_trade_no);
 			}
 			return ['type'=>'html','data'=>'1'];

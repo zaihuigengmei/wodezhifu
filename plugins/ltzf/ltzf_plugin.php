@@ -176,7 +176,7 @@ class ltzf_plugin
 				$out_trade_no = $arr['out_trade_no'];
 				$trade_no = $arr['order_no'];
 
-				if ($out_trade_no == TRADE_NO) {
+				if ($out_trade_no == TRADE_NO && epay_callback_cent_match(($arr['total_fee'] ?? null), $order['realmoney'])) {
 					processNotify($order, $trade_no, $arr['openid']);
 				}
 				return ['type'=>'html','data'=>'SUCCESS'];

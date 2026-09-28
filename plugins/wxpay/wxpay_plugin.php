@@ -348,7 +348,9 @@ class wxpay_plugin
 		$client = new \WeChatPay\PaymentService($wechatpay_config);
 		try{
 			$result = $client->microPay($params);
-			processNotify($order, $result['transaction_id'], $result['openid']);
+			if(($result['out_trade_no'] ?? '') == TRADE_NO && isset($result['total_fee']) && (int)$result['total_fee'] === (int)round($order['realmoney']*100)){
+				processNotify($order, $result['transaction_id'], $result['openid']);
+			}
 			return ['type'=>'scan','data'=>['type'=>$order['typename'], 'trade_no'=>$result['out_trade_no'], 'api_trade_no'=>$result['transaction_id'], 'buyer'=>$result['openid'], 'money'=>strval(round($result['total_fee']/100, 2))]];
 		}catch(\WeChatPay\WeChatPayException $e){
 			$err_code = $e->getErrCode();
@@ -372,7 +374,9 @@ class wxpay_plugin
 					$retry++;
 				}
 				if($success){
-					processNotify($order, $result['transaction_id'], $result['openid']);
+					if(($result['out_trade_no'] ?? '') == TRADE_NO && isset($result['total_fee']) && (int)$result['total_fee'] === (int)round($order['realmoney']*100)){
+						processNotify($order, $result['transaction_id'], $result['openid']);
+					}
 					return ['type'=>'scan','data'=>['type'=>$order['typename'], 'trade_no'=>$result['out_trade_no'], 'api_trade_no'=>$result['transaction_id'], 'buyer'=>$result['openid'], 'money'=>strval(round($result['total_fee']/100, 2))]];
 				}else{
 					try{

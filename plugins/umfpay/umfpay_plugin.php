@@ -167,7 +167,7 @@ class umfpay_plugin
 		if($verify_result) {//验证成功
 
 			if ($_GET['trade_state'] == 'TRADE_SUCCESS') {
-				if($_GET['order_id'] == TRADE_NO){
+				if($_GET['order_id'] == TRADE_NO && epay_callback_cent_match(($_GET['amount'] ?? null), $order['realmoney']) && (!isset($_GET['amt_type']) || strtoupper((string)$_GET['amt_type']) === 'RMB')){
 					processNotify($order, $_GET['trade_no'], $_GET['mer_cust_id']);
 				}
 			}else{

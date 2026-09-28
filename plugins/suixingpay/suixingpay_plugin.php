@@ -401,7 +401,7 @@ class suixingpay_plugin
 		if($verify_result) {//验证成功
 
 			if ($arr['bizCode'] == '0000') {
-				if($arr['ordNo'] == TRADE_NO){
+				if($arr['ordNo'] == TRADE_NO && epay_callback_money_match(($arr['amt'] ?? null), $order['realmoney'])){
 					processNotify($order, $arr['sxfUuid'], $arr['buyerId'], $arr['transactionId']);
 				}
 				return ['type'=>'html','data'=>'{"code":"success","msg":"成功"}'];

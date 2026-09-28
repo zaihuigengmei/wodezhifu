@@ -334,7 +334,7 @@ class fuiou3_plugin
 				$buyer = $arr['openid'];
 				$bill_trade_no = $arr['pay_ssn'];
 				$bill_mch_trade_no = $arr['fy_order_id'];
-				if($out_trade_no == TRADE_NO){
+				if($out_trade_no == TRADE_NO && epay_callback_cent_match($money, $order['realmoney'])){
 					processNotify($order, $trade_no, $buyer, $bill_trade_no, $bill_mch_trade_no);
 				}
 				return ['type'=>'html','data'=>'success'];

@@ -173,7 +173,7 @@ class alipayg_plugin
 			$total_amount = $arr['paymentAmount']['value'];
 
 			if ($arr['result']['resultStatus'] == 'S') {
-				if($out_trade_no == TRADE_NO){
+				if($out_trade_no == TRADE_NO && epay_callback_money_match($total_amount, round($order['realmoney'] / ($channel['currency_rate'] ?: 1), 2)) && strtoupper((string)($arr['paymentAmount']['currency'] ?? $channel['currency_code'] ?? 'CNY')) === strtoupper((string)($channel['currency_code'] ?: 'CNY'))){
 					processNotify($order, $trade_no, $buyer_id);
 				}
 			}

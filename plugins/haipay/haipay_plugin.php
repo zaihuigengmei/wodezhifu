@@ -358,7 +358,9 @@ class haipay_plugin
 		$api_trade_no = $result['trade_no'];
 		if($result['trade_status'] == '1'){
 			$result = self::orderQuery($client, $api_trade_no);
-			processNotify($order, $api_trade_no, $result['openid'], $result['bank_trade_no']);
+			if(($result['out_trade_no'] ?? '') == TRADE_NO && epay_callback_money_match(($result['order_amount'] ?? null), $order['realmoney'])){
+				processNotify($order, $api_trade_no, $result['openid'], $result['bank_trade_no']);
+			}
 			return ['type'=>'scan','data'=>['type'=>$order['typename'], 'trade_no'=>$result['out_trade_no'], 'api_trade_no'=>$api_trade_no, 'buyer'=>$result['openid'], 'money'=>$result['order_amount']]];
 		}else{
 			$retry = 0;
@@ -379,7 +381,9 @@ class haipay_plugin
 				$retry++;
 			}
 			if($success){
-				processNotify($order, $api_trade_no, $result['openid'], $result['bank_trade_no']);
+				if(($result['out_trade_no'] ?? '') == TRADE_NO && epay_callback_money_match(($result['order_amount'] ?? null), $order['realmoney'])){
+					processNotify($order, $api_trade_no, $result['openid'], $result['bank_trade_no']);
+				}
 				return ['type'=>'scan','data'=>['type'=>$order['typename'], 'trade_no'=>$result['out_trade_no'], 'api_trade_no'=>$api_trade_no, 'buyer'=>$result['openid'], 'money'=>$result['order_amount']]];
 			}else{
 				try{
@@ -431,7 +435,7 @@ class haipay_plugin
 				$money = $arr['order_amount'];
 				$buyer = $arr['openid'];
 	
-				if ($out_trade_no == TRADE_NO) {
+				if ($out_trade_no == TRADE_NO && epay_callback_money_match($money, $order['realmoney'])) {
 					processNotify($order, $api_trade_no, $buyer, $bill_trade_no);
 				}
 			}

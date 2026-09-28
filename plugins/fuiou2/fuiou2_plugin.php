@@ -393,7 +393,9 @@ class fuiou2_plugin
 		try{
 			$result = $client->submit('/micropay', $params);
 			if($result['result_code'] == '000000'){
-				processNotify($order, $result['reserved_mchnt_order_no'], $result['buyer_id'], $result['transaction_id']);
+				if(isset($result['total_amount']) && epay_callback_cent_match($result['total_amount'], $order['realmoney'])){
+					processNotify($order, $result['reserved_mchnt_order_no'], $result['buyer_id'], $result['transaction_id']);
+				}
 				return ['type'=>'scan','data'=>['type'=>$order['typename'], 'trade_no'=>TRADE_NO, 'api_trade_no'=>$result['reserved_mchnt_order_no'], 'buyer'=>$result['buyer_id'], 'money'=>strval(round($result['total_amount']/100, 2))]];
 			}else{
 				$retry = 0;
@@ -414,7 +416,9 @@ class fuiou2_plugin
 					$retry++;
 				}
 				if($success){
-					processNotify($order, $result['mchnt_order_no'], $result['buyer_id'], $result['transaction_id']);
+					if(isset($result['order_amt']) && epay_callback_cent_match($result['order_amt'], $order['realmoney'])){
+						processNotify($order, $result['mchnt_order_no'], $result['buyer_id'], $result['transaction_id']);
+					}
 					return ['type'=>'scan','data'=>['type'=>$order['typename'], 'trade_no'=>$result['orderNo'], 'api_trade_no'=>$result['mchnt_order_no'], 'buyer'=>$result['buyer_id'], 'money'=>strval(round($result['order_amt']/100, 2))]];
 				}else{
 					try{
@@ -474,7 +478,7 @@ class fuiou2_plugin
 				$bill_trade_no = $arr['transaction_id'];
 				$money = $arr['order_amt'];
 				$buyer = $arr['user_id'];
-				if($out_trade_no == TRADE_NO){
+				if($out_trade_no == TRADE_NO && epay_callback_cent_match($money, $order['realmoney'])){
 					processNotify($order, $api_trade_no, $buyer, $bill_trade_no);
 				}
 				return ['type'=>'html','data'=>'1'];

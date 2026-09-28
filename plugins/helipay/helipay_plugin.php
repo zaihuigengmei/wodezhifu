@@ -620,7 +620,7 @@ class helipay_plugin
 				$buyer = $_POST['rt19_subOpenId'];
 				$bill_trade_no = $_POST['rt17_outTransactionOrderId'];
 
-				if ($out_trade_no == TRADE_NO) {
+				if ($out_trade_no == TRADE_NO && epay_callback_money_match($money, $order['realmoney']) && strtoupper((string)$_POST['rt6_currency']) === 'CNY') {
 					processNotify($order, $api_trade_no, $buyer, $bill_trade_no);
 				}
 			}

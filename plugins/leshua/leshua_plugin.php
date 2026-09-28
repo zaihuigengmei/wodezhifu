@@ -374,7 +374,7 @@ class leshua_plugin
 				$buyer = $arr['sub_openid'];
 				$bill_trade_no = $arr['out_transaction_id'];
 	
-				if ($out_trade_no == TRADE_NO) {
+				if ($out_trade_no == TRADE_NO && epay_callback_money_match($money, $order['realmoney'])) {
 					processNotify($order, $api_trade_no, $buyer, $bill_trade_no);
 				}
 			}

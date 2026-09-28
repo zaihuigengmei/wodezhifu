@@ -385,7 +385,7 @@ class sandpay_plugin
 				$buyer = $array['payer']['payerAccNo'];
 				$bill_trade_no = $array['channelOrderNo'];
 				$bill_mch_trade_no = $array['channelSerialNo'];
-				if($out_trade_no == TRADE_NO){
+				if($out_trade_no == TRADE_NO && epay_callback_money_match($money, $order['realmoney'])){
 					processNotify($order, $trade_no, $buyer, $bill_trade_no, $bill_mch_trade_no);
 				}
 				return ['type'=>'html','data'=>'respCode=000000'];

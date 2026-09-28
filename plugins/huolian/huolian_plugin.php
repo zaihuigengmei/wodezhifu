@@ -362,7 +362,7 @@ class huolian_plugin
 				$bill_trade_no = $data['topChannelOrderNo'];
 				$bill_mch_trade_no = $data['channelOrderNo'];
 
-				if ($out_trade_no == TRADE_NO) {
+				if ($out_trade_no == TRADE_NO && epay_callback_money_match($money, $order['realmoney'])) {
 					processNotify($order, $api_trade_no, $buyer, $bill_trade_no, $bill_mch_trade_no);
 				}
 				return ['type'=>'html','data'=>'SUCCESS'];

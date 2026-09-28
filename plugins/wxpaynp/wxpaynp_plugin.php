@@ -501,7 +501,7 @@ class wxpaynp_plugin
 		}
 
 		if(isset($data['combine_out_trade_no'])){ //合单支付
-			if($data['combine_out_trade_no'] == TRADE_NO){
+			if($data['combine_out_trade_no'] == TRADE_NO && array_sum(array_map(function($d){ return (int)($d['amount']['total_amount'] ?? 0); }, $data['sub_orders'])) === (int)round($order['realmoney']*100)){
 				$sub_orders = [];
 				foreach($data['sub_orders'] as $detail){
 					$sub_orders[] = ['sub_trade_no'=>$detail['out_trade_no'], 'api_trade_no'=>$detail['transaction_id'], 'money'=>round($detail['amount']['total_amount']/100,2)];
@@ -515,7 +515,7 @@ class wxpaynp_plugin
 			}
 		}else{
 			if ($data['trade_state'] == 'SUCCESS') {
-				if($data['out_trade_no'] == TRADE_NO){
+				if($data['out_trade_no'] == TRADE_NO && isset($data['amount']['total']) && (int)$data['amount']['total'] === (int)round($order['realmoney']*100) && (!isset($data['amount']['currency']) || strtoupper($data['amount']['currency']) === 'CNY')){
 					if($conf['direct_settle_time'] > 0 && $order['profits'] == 0){
 						$order['settle'] = 1;
 					}

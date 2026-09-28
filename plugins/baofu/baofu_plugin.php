@@ -466,7 +466,7 @@ class baofu_plugin
 
 			$params = json_decode($_POST['dataContent'], true);
 			if ($params['txnState'] == 'SUCCESS') {
-				if($params['outTradeNo'] == TRADE_NO){
+				if($params['outTradeNo'] == TRADE_NO && epay_callback_cent_match(($params['txnAmt'] ?? $params['totalAmt'] ?? null), $order['realmoney'])){
 					if(strpos($params['payCode'], 'ALIPAY_') !== false){
 						$buyer = $params['chlRetParam']['buyer_id'];
 						$bill_trade_no = $params['chlRetParam']['trade_no'];
