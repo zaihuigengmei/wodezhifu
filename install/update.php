@@ -1,6 +1,10 @@
 <?php
 error_reporting(0);
 define('DB_VERSION', '2055');
+if(file_exists(__DIR__.'/install.lock')){
+	http_response_code(404);
+	exit('Not Found');
+}
 require '../config.php';
 
 @header('Content-Type: text/html; charset=UTF-8');

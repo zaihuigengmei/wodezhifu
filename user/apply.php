@@ -51,6 +51,7 @@ if($userrow['remain_money'] > 0 && !strpos($userrow['remain_money'], '%') && $en
 if(isset($_GET['act']) && $_GET['act']=='do'){
 	if($_POST['submit']=='申请提现'){
 		if(!checkRefererHost())exit();
+		csrf_check_page('user');
 		$money=daddslashes(strip_tags($_POST['money']));
 		if(!is_numeric($money) || !preg_match('/^[0-9.]+$/', $money) || $money<=0)exit("<script language='javascript'>alert('提现金额输入不规范');history.go(-1);</script>");
 		if($enable_money<$conf['settle_money']){
@@ -139,7 +140,7 @@ if(isset($_GET['act']) && $_GET['act']=='do'){
 			申请提现
 		</div>
 		<div class="panel-body">
-			<form class="form-horizontal devform" action="./apply.php?act=do" method="post">
+			<form class="form-horizontal devform" action="./apply.php?act=do" method="post"><input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(csrf_token('user'), ENT_QUOTES, 'UTF-8')?>">
 				<div class="form-group">
 					<label class="col-sm-2 control-label">提现方式</label>
 					<div class="col-sm-9">

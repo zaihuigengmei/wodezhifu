@@ -98,6 +98,8 @@ if($_GET['code'] && ($conf['login_qq']==1 || $conf['login_qq']==3 || $conf['logi
 		exit("<script language='javascript'>alert('请输入商户ID和密钥完成绑定和登录');window.location.href='./login.php?connect=true';</script>");
 	}
 }elseif($islogin2==1 && isset($_GET['unbind'])){
+	if(!checkRefererHost())exit();
+	csrf_check_page('user');
 	$DB->exec("update `pre_user` set `qq_uid`=NULL where `uid`='$uid'");
 	@header('Content-Type: text/html; charset=UTF-8');
 	exit("<script language='javascript'>alert('您已成功解绑QQ！');window.location.href='./editinfo.php';</script>");

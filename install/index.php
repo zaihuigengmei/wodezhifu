@@ -47,10 +47,16 @@ if($step==3){
         $dbqz=isset($_POST['dbqz'])?$_POST['dbqz']:null;
         if(empty($host) || empty($port) || empty($user) || empty($pwd) || empty($database) || empty($dbqz)){
             $errorMsg='请填写完整所有数据库信息！';
+        }elseif(!preg_match('/^[0-9]{1,5}$/', $port) || intval($port)<1 || intval($port)>65535){
+            $errorMsg='数据库端口格式错误！';
+        }elseif(!preg_match('/^[a-zA-Z0-9_]{1,32}$/', $database)){
+            $errorMsg='数据库名格式错误！';
+        }elseif(!preg_match('/^[a-zA-Z0-9_]{1,16}$/', $dbqz)){
+            $errorMsg='数据表前缀格式错误！';
         }
         $dbconfig=array(
             'host' => $host,
-            'port' => $port,
+            'port' => intval($port),
             'user' => $user,
             'pwd' => $pwd,
             'dbname' => $database,
@@ -58,15 +64,8 @@ if($step==3){
         );
         $config="<?php
     /*数据库配置*/
-    \$dbconfig=array(
-        'host' => '{$host}', //数据库服务器
-        'port' => {$port}, //数据库端口
-        'user' => '{$user}', //数据库用户名
-        'pwd' => '{$pwd}', //数据库密码
-        'dbname' => '{$database}', //数据库名
-        'dbqz' => '{$dbqz}' //数据表前缀
-    );
-    ";
+    \$dbconfig = ".var_export($dbconfig, true).";
+";
     }
     if(empty($errorMsg)){
         try{

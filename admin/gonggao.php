@@ -6,6 +6,8 @@ include("../includes/common.php");
 $title='公告设置';
 include './head.php';
 if($islogin==1){}else exit("<script language='javascript'>window.location.href='./login.php';</script>");
+function h($value){ return htmlspecialchars((string)$value, ENT_QUOTES, 'UTF-8'); }
+function safe_notice_color($color){ $color=trim((string)$color); return preg_match('/^#[0-9a-fA-F]{6}$/', $color) ? $color : ''; }
 ?>
 <link href="<?php echo $cdnpublic?>bootstrap-colorpicker/2.5.3/css/bootstrap-colorpicker.min.css" rel="stylesheet"/>
   <div class="container" style="padding-top:70px;">
@@ -21,20 +23,20 @@ if($my=='edit'){
 <div class="panel panel-primary">
 <div class="panel-heading"><h3 class="panel-title">修改公告(ID:<?php echo $id?>)</h3></div>
 <div class="panel-body">
-	<form action="./gonggao.php?my=edit_submit&id=<?php echo $id?>" role="form" class="form-horizontal" method="post">
+	<form action="./gonggao.php?my=edit_submit&id=<?php echo $id?>" role="form" class="form-horizontal" method="post"><input type="hidden" name="csrf_token" value="<?php echo h(csrf_token('admin'))?>">
 		<div class="list-group-item">
 			<div class="input-group">
 				<div class="input-group-addon">公告内容</div>
-				<textarea class="form-control" name="content" rows="5" placeholder="输入公告内容" required><?php echo $rows['content']?></textarea>
+				<textarea class="form-control" name="content" rows="5" placeholder="输入公告内容" required><?php echo h($rows['content'])?></textarea>
 			</div>
 		</div>
 		<div class="list-group-item form-inline">
 			<div class="input-group">
 				<div class="input-group-addon">排序</div>
-				<input type="text" name="sort" value="<?php echo $rows['sort']?>" class="form-control" required/>
+				<input type="text" name="sort" value="<?php echo intval($rows['sort'])?>" class="form-control" required/>
 			</div>
 			<div class="input-group input-colorpicker colorpicker-element">
-				<input type="text" name="color" value="<?php echo $rows['color']?>" class="form-control" placeholder="文字颜色" maxlength="7"/>
+				<input type="text" name="color" value="<?php echo h(safe_notice_color($rows['color']))?>" class="form-control" placeholder="文字颜色" maxlength="7"/>
 				<span class="input-group-addon"><i></i></span>
 			</div>
 		</div>
@@ -47,13 +49,15 @@ if($my=='edit'){
 <?php
 }
 elseif($my=='add_submit'){
-$content=$_POST['content'];
+if(!checkRefererHost())exit();
+csrf_check_page('admin');
+$content=trim($_POST['content']);
 $sort=intval($_POST['sort']);
-$color=trim($_POST['color']);
+$color=safe_notice_color($_POST['color']);
 if(!$content || !$sort){
 showmsg('公告内容不能为空',3);
 } else {
-$sds=$DB->exec("INSERT INTO `pre_anounce` (`content`, `color`, `sort`, `addtime`, `status`) VALUES ('{$content}', '{$color}', '{$sort}', '{$date}', 1)");
+$sds=$DB->insert('anounce', ['content'=>$content, 'color'=>$color, 'sort'=>$sort, 'addtime'=>$date, 'status'=>1]);
 if($sds){
 	showmsg('添加公告成功！<br/><br/><a href="./gonggao.php">>>返回公告列表</a>',1);
 }else
@@ -65,13 +69,15 @@ $id=intval($_GET['id']);
 $rows=$DB->getRow("select * from pre_anounce where id='$id' limit 1");
 if(!$rows)
 	showmsg('当前公告不存在！',3);
-$content=$_POST['content'];
+if(!checkRefererHost())exit();
+csrf_check_page('admin');
+$content=trim($_POST['content']);
 $sort=intval($_POST['sort']);
-$color=trim($_POST['color']);
+$color=safe_notice_color($_POST['color']);
 if(!$content || !$sort){
 showmsg('公告内容不能为空',3);
 } else {
-$sds=$DB->exec("UPDATE `pre_anounce` SET `content`='$content',`sort`='$sort',`color`='$color' WHERE `id`='$id'");
+$sds=$DB->update('anounce', ['content'=>$content, 'sort'=>$sort, 'color'=>$color], ['id'=>$id]);
 if($sds!==false){
 	showmsg('修改公告成功！<br/><br/><a href="./gonggao.php">>>返回公告列表</a>',1);
 }else
@@ -83,7 +89,7 @@ $list = $DB->getAll("SELECT * FROM pre_anounce ORDER BY sort ASC");
 <div class="panel panel-primary">
 <div class="panel-heading"><h3 class="panel-title">添加公告</h3></div>
 <div class="panel-body">
-	<form action="./gonggao.php?my=add_submit" role="form" class="form-horizontal" method="post">
+	<form action="./gonggao.php?my=add_submit" role="form" class="form-horizontal" method="post"><input type="hidden" name="csrf_token" value="<?php echo h(csrf_token('admin'))?>">
 		<div class="list-group-item">
 			<div class="input-group">
 				<div class="input-group-addon">公告内容</div>
@@ -112,7 +118,7 @@ $list = $DB->getAll("SELECT * FROM pre_anounce ORDER BY sort ASC");
 <div class="panel-body">
 <?php foreach($list as $row){?>
 		<div class="list-group-item">
-			<em class="fa fa-fw fa-volume-up"></em><font color="<?php echo $row['color']?$row['color']:null?>"><?php echo $row['content']?></font><small>&nbsp;-<?php echo $row['addtime']?></small>&nbsp;&nbsp;<?php echo $row['status']==1?'<span class="btn btn-xs btn-success" onclick="setStatus('.$row['id'].',0)">显示</span>':'<span class="btn btn-xs btn-warning" onclick="setStatus('.$row['id'].',1)">隐藏</span>'?>&nbsp;<a class="btn btn-xs btn-info" href="./gonggao.php?my=edit&id=<?php echo $row['id']?>">编辑</a>&nbsp;<a class="btn btn-xs btn-danger" href="javascript:delItem(<?php echo $row['id']?>)">删除</a>
+			<em class="fa fa-fw fa-volume-up"></em><font color="<?php echo h(safe_notice_color($row['color']))?>"><?php echo h($row['content'])?></font><small>&nbsp;-<?php echo h($row['addtime'])?></small>&nbsp;&nbsp;<?php echo $row['status']==1?'<span class="btn btn-xs btn-success" onclick="setStatus('.$row['id'].',0)">显示</span>':'<span class="btn btn-xs btn-warning" onclick="setStatus('.$row['id'].',1)">隐藏</span>'?>&nbsp;<a class="btn btn-xs btn-info" href="./gonggao.php?my=edit&id=<?php echo $row['id']?>">编辑</a>&nbsp;<a class="btn btn-xs btn-danger" href="javascript:delItem(<?php echo $row['id']?>)">删除</a>
 		</div>
 <?php }?>
 </div>

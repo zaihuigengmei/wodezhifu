@@ -5,6 +5,18 @@ use Exception;
 
 class Plugin {
 
+	static private function safePluginFile($plugin){
+		if(!preg_match('/^[a-zA-Z0-9_]{1,32}$/', (string)$plugin)){
+			throw new Exception('插件名不符合规范');
+		}
+		$base = realpath(PLUGIN_ROOT);
+		$file = realpath(PLUGIN_ROOT.$plugin.'/'.$plugin.'_plugin.php');
+		if($base === false || $file === false || strpos($file, $base.DIRECTORY_SEPARATOR) !== 0){
+			throw new Exception('插件路径不合法');
+		}
+		return $file;
+	}
+
 	static public function getList(){
 		$dir = PLUGIN_ROOT;
 		$dirArray[] = NULL;
@@ -22,7 +34,7 @@ class Plugin {
 	}
 
 	static public function getConfig($name){
-		$filename = PLUGIN_ROOT.$name.'/'.$name.'_plugin.php';
+		$filename = self::safePluginFile($name);
 		$classname = '\\'.$name.'_plugin';
 		if(file_exists($filename)){
 			include $filename;
@@ -147,7 +159,7 @@ class Plugin {
 	}
 
 	static public function loadClass($plugin, $func, $trade_no){
-		$filename = PLUGIN_ROOT.$plugin.'/'.$plugin.'_plugin.php';
+		$filename = self::safePluginFile($plugin);
 		$classname = '\\'.$plugin.'_plugin';
         if (file_exists($filename)) {
 			if(!defined("IN_PLUGIN")) define("IN_PLUGIN", true);
@@ -171,7 +183,7 @@ class Plugin {
 
 	
 	static public function exists($name){
-		$filename = PLUGIN_ROOT.$name.'/'.$name.'_plugin.php';
+		$filename = self::safePluginFile($name);
 		if(file_exists($filename)){
 			return true;
 		}else{
@@ -180,7 +192,7 @@ class Plugin {
 	}
 
 	static public function isrefund($name){
-		$filename = PLUGIN_ROOT.$name.'/'.$name.'_plugin.php';
+		$filename = self::safePluginFile($name);
 		$classname = '\\'.$name.'_plugin';
 		if(file_exists($filename)){
 			include $filename;
@@ -204,7 +216,7 @@ class Plugin {
 		}
 		$order['refund_no'] = $refund_no;
 		$order['refundmoney'] = $money;
-		$filename = PLUGIN_ROOT.$channel['plugin'].'/'.$channel['plugin'].'_plugin.php';
+		$filename = self::safePluginFile($channel['plugin']);
 		$classname = '\\'.$channel['plugin'].'_plugin';
 		$func = 'refund';
 		if($order['combine'] == 1) $func = 'refund_combine';
@@ -239,7 +251,7 @@ class Plugin {
 			$message = '当前支付通道信息不存在';
 			return false;
 		}
-		$filename = PLUGIN_ROOT.$channel['plugin'].'/'.$channel['plugin'].'_plugin.php';
+		$filename = self::safePluginFile($channel['plugin']);
 		$classname = '\\'.$channel['plugin'].'_plugin';
 		$func = 'close';
 		if($order['combine'] == 1) $func = 'close_combine';
@@ -268,7 +280,7 @@ class Plugin {
 
 	static public function loadForAdmin($func){
 		global $channel;
-		$filename = PLUGIN_ROOT.$channel['plugin'].'/'.$channel['plugin'].'_plugin.php';
+		$filename = self::safePluginFile($channel['plugin']);
 		$classname = '\\'.$channel['plugin'].'_plugin';
 		if(file_exists($filename)){
 			include_once $filename;
@@ -285,7 +297,7 @@ class Plugin {
 	}
 
 	static public function call($func, $channel, $bizParam = null){
-		$filename = PLUGIN_ROOT.$channel['plugin'].'/'.$channel['plugin'].'_plugin.php';
+		$filename = self::safePluginFile($channel['plugin']);
 		$classname = '\\'.$channel['plugin'].'_plugin';
 		if(file_exists($filename)){
 			include_once $filename;

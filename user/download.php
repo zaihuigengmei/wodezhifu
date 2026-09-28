@@ -2,6 +2,8 @@
 include("../includes/common.php");
 
 if($islogin2==1){}else exit("<script language='javascript'>window.location.href='./login.php';</script>");
+if(!checkRefererHost()) exit('Forbidden');
+csrf_check_page('user');
 
 $act=isset($_GET['act'])?daddslashes($_GET['act']):null;
 
@@ -18,7 +20,8 @@ function display_status($status){
 }
 
 function csv_text($value){
-	$value = str_replace(["", "
+	$value = str_replace(["
+", "
 "], ' ', (string)$value);
 	if(preg_match('/^[=+\-@]/', $value)) $value = "'".$value;
 	$value = str_replace('"', '""', $value);
@@ -173,7 +176,7 @@ $file="ID,支付方式,商户ID,关联订单号,商品名称,订单金额,问题
 
 $rs = $DB->query("SELECT A.*,B.money,B.name ordername,C.apply_id submchid FROM pre_complain A LEFT JOIN pre_order B ON A.trade_no=B.trade_no LEFT JOIN pre_subchannel C ON A.subchannel=C.id WHERE{$sql} order by A.addtime desc limit 100000");
 while($row = $rs->fetch()){
-	$file.=''.$row['id'].','.$paytype[$row['paytype']].','.$row['submchid'].',="'.$row['trade_no'].'",'.$row['ordername'].','.$row['money'].','.$row['type'].','.$row['title'].','.str_replace(["\r\n", "\n"]," ",$row['content']).','.$row['addtime'].','.$row['edittime'].','.['0'=>'待处理','1'=>'处理中','2'=>'处理完成'][$row['status']]."\r\n";
+	$file.=csv_text($row['id']).','.csv_text($paytype[$row['paytype']]).','.csv_text($row['submchid']).','.csv_text($row['trade_no']).','.csv_text($row['ordername']).','.csv_text($row['money']).','.csv_text($row['type']).','.csv_text($row['title']).','.csv_text($row['content']).','.csv_text($row['addtime']).','.csv_text($row['edittime']).','.csv_text(['0'=>'待处理','1'=>'处理中','2'=>'处理完成'][$row['status']])."\r\n";
 }
 
 $file = hex2bin('efbbbf').$file;
@@ -228,7 +231,7 @@ $file="系统订单号,分账规则,支付方式,订单金额,分账金额,时�
 
 $rs = $DB->query("SELECT A.*,C.id channelid,C.name channelname,C.type,D.realmoney ordermoney FROM pre_psorder A LEFT JOIN pre_psreceiver B ON A.rid=B.id LEFT JOIN pre_channel C ON B.channel=C.id LEFT JOIN pre_order D ON D.trade_no=A.trade_no WHERE{$sql} order by A.id desc limit 100000");
 while($row = $rs->fetch()){
-	$file.='="'.$row['trade_no'].'",'.$row['rid'].','.$paytype[$row['type']].','.$row['ordermoney'].','.$row['money'].','.$row['addtime'].','.display_psstatus($row['status'])."\r\n";
+	$file.=csv_text($row['trade_no']).','.csv_text($row['rid']).','.csv_text($paytype[$row['type']]).','.csv_text($row['ordermoney']).','.csv_text($row['money']).','.csv_text($row['addtime']).','.csv_text(display_psstatus($row['status']))."\r\n";
 }
 
 $file = hex2bin('efbbbf').$file;
@@ -245,7 +248,7 @@ case 'wximg':
 	if(!checkRefererHost())exit();
 	$channelid = intval($_GET['channel']);
 	$subchannelid = intval($_GET['subchannel']);
-	$media_id = $_GET['mediaid'];
+	$media_id = isset($_GET['mediaid']) && preg_match('/^[a-zA-Z0-9_.:-]{1,128}$/', $_GET['mediaid']) ? $_GET['mediaid'] : exit('param error');
 	$channel = $subchannelid ? \lib\Channel::getSub($subchannelid) : \lib\Channel::get($channelid);
 	$model = \lib\Complain\CommUtil::getModel($channel);
 	$image = $model->getImage($media_id);

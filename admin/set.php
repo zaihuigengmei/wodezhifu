@@ -211,6 +211,7 @@ $("select[name='homepage']").change(function(){
 <?php
 }elseif($mod=='paypwd_n' && $_POST['do']=='submit'){
 	if(!checkRefererHost())exit;
+	csrf_check_page('admin');
 	$oldpwd=trim($_POST['oldpwd']);
 	$newpwd=trim($_POST['newpwd']);
 	$newpwd2=trim($_POST['newpwd2']);
@@ -228,6 +229,7 @@ $("select[name='homepage']").change(function(){
 	else showmsg('修改失败！<br/>'.$DB->error(),4);
 }elseif($mod=='account_n' && $_POST['do']=='submit'){
 	if(!checkRefererHost())exit;
+	csrf_check_page('admin');
 	$user=trim($_POST['user']);
 	$oldpwd=trim($_POST['oldpwd']);
 	$newpwd=trim($_POST['newpwd']);
@@ -247,7 +249,7 @@ $("select[name='homepage']").change(function(){
 <div class="panel panel-primary">
 <div class="panel-heading"><h3 class="panel-title">管理员账号配置</h3></div>
 <div class="panel-body">
-  <form action="./set.php?mod=account_n" method="post" class="form-horizontal" role="form"><input type="hidden" name="do" value="submit"/>
+  <form action="./set.php?mod=account_n" method="post" class="form-horizontal" role="form"><input type="hidden" name="do" value="submit"/><input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(csrf_token('admin'), ENT_QUOTES, 'UTF-8')?>"/>
 	<div class="form-group">
 	  <label class="col-sm-2 control-label">用户名</label>
 	  <div class="col-sm-10"><input type="text" name="user" value="<?php echo $conf['admin_user']; ?>" class="form-control" required/></div>
@@ -274,7 +276,7 @@ $("select[name='homepage']").change(function(){
 <div class="panel panel-primary">
 <div class="panel-heading"><h3 class="panel-title">支付密码修改</h3></div>
 <div class="panel-body">
-  <form action="./set.php?mod=paypwd_n" method="post" class="form-horizontal" role="form"><input type="hidden" name="do" value="submit"/>
+  <form action="./set.php?mod=paypwd_n" method="post" class="form-horizontal" role="form"><input type="hidden" name="do" value="submit"/><input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(csrf_token('admin'), ENT_QUOTES, 'UTF-8')?>"/>
 	<div class="form-group">
 	  <label class="col-sm-2 control-label">旧密码</label>
 	  <div class="col-sm-10"><input type="password" name="oldpwd" value="" class="form-control" placeholder="请输入当前的支付密码"/></div>

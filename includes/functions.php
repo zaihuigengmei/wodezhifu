@@ -29,6 +29,7 @@ function epay_assert_safe_outbound_url($url){
 function curl_get($url)
 {
 	global $conf;
+	if(function_exists('epay_assert_safe_outbound_url') && !epay_assert_safe_outbound_url($url)) return false;
 	$ch=curl_init($url);
 	if($conf['proxy'] == 1){
 		$proxy_server = $conf['proxy_server'];
@@ -61,6 +62,7 @@ function curl_get($url)
 	curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
 	curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
 	curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/78.0.3904.108 Safari/537.36');
+	if(defined('CURLOPT_PROTOCOLS')) curl_setopt($ch, CURLOPT_PROTOCOLS, CURLPROTO_HTTP | CURLPROTO_HTTPS);
 	curl_setopt($ch, CURLOPT_TIMEOUT, 5);
 	$content=curl_exec($ch);
 	curl_close($ch);
@@ -68,6 +70,7 @@ function curl_get($url)
 }
 function get_curl($url, $post=0, $referer=0, $cookie=0, $header=0, $ua=0, $nobaody=0, $addheader=0, $location=0)
 {
+	if(function_exists('epay_assert_safe_outbound_url') && !epay_assert_safe_outbound_url($url)) return false;
 	$ch = curl_init();
 	curl_setopt($ch, CURLOPT_URL, $url);
 	curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
@@ -106,6 +109,8 @@ function get_curl($url, $post=0, $referer=0, $cookie=0, $header=0, $ua=0, $nobao
 		curl_setopt($ch, CURLOPT_FOLLOWLOCATION, false);
 	}
 	curl_setopt($ch, CURLOPT_ENCODING, "gzip");
+	if(defined('CURLOPT_PROTOCOLS')) curl_setopt($ch, CURLOPT_PROTOCOLS, CURLPROTO_HTTP | CURLPROTO_HTTPS);
+	if(defined('CURLOPT_REDIR_PROTOCOLS')) curl_setopt($ch, CURLOPT_REDIR_PROTOCOLS, CURLPROTO_HTTP | CURLPROTO_HTTPS);
 	curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
 	$ret = curl_exec($ch);
 	curl_close($ch);

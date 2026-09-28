@@ -2,6 +2,17 @@
 
 class paypal_plugin
 {
+	static private function getPaypalCert($url){
+		$parts = parse_url($url);
+		if($parts === false || empty($parts['scheme']) || strtolower($parts['scheme']) !== 'https' || empty($parts['host'])) exit('证书URL不合法');
+		$host = strtolower($parts['host']);
+		if(!preg_match('/(^|\.)paypal\.com$/', $host) && !preg_match('/(^|\.)paypalobjects\.com$/', $host)) exit('证书域名不合法');
+		if(isset($parts['port']) && intval($parts['port']) !== 443) exit('证书端口不合法');
+		if(isset($parts['user']) || isset($parts['pass'])) exit('证书URL不允许包含用户信息');
+		if(function_exists('epay_is_safe_outbound_url') && !epay_is_safe_outbound_url($url)) exit('证书URL不安全');
+		return get_curl($url);
+	}
+
 	static public $info = [
 		'name'        => 'paypal', //支付插件英文名称，需和目录名称一致，不能有重复
 		'showname'    => 'PayPal', //支付插件显示名称
@@ -176,7 +187,7 @@ class paypal_plugin
         $sign_string = $_SERVER['HTTP_PAYPAL_TRANSMISSION_ID'].'|'.$_SERVER['HTTP_PAYPAL_TRANSMISSION_TIME'].'|'.$channel['appsecret'].'|'.$crc32;
 
         // 通过PAYPAL-CERT-URL头信息去拿公钥
-        $public_key = openssl_pkey_get_public(get_curl($_SERVER['HTTP_PAYPAL_CERT_URL']));
+        $public_key = openssl_pkey_get_public(self::getPaypalCert($_SERVER['HTTP_PAYPAL_CERT_URL']));
         $details = openssl_pkey_get_details($public_key);
         $verify = openssl_verify($sign_string, base64_decode($_SERVER['HTTP_PAYPAL_TRANSMISSION_SIG']), $details['key'], 'SHA256');
         if($verify != 1)

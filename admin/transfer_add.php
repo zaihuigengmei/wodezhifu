@@ -11,6 +11,7 @@ $app = isset($_GET['app'])?$_GET['app']:'alipay';
 
 if(isset($_POST['submit'])){
 	if(!checkRefererHost())exit();
+	csrf_check_page('admin');
 	$out_biz_no = trim($_POST['out_biz_no']);
 	if(!isset($_POST['paypwd']) || $_POST['paypwd']!==$conf['admin_paypwd'])showmsg('支付密码错误',3);
 	$payee_account = htmlspecialchars(trim($_POST['payee_account']));
@@ -64,7 +65,10 @@ if(isset($_GET['account']) && isset($_GET['username'])){
 		'username' => htmlspecialchars(trim($_GET['username'])),
 	];
 }elseif(isset($_GET['copy'])){
-	$copy = $DB->find('transfer', '*', ['biz_no'=>trim($_GET['copy'])]);
+	$copy_no = trim($_GET['copy']);
+	if(!preg_match('/^[a-zA-Z0-9_-]{8,64}$/', $copy_no)) showmsg('付款记录参数格式错误',3);
+	$copy = $DB->find('transfer', '*', ['biz_no'=>$copy_no]);
+	if(!$copy) showmsg('付款记录不存在',3);
 	$default_channel = $copy['channel'];
 }
 ?>
@@ -76,7 +80,7 @@ if(isset($_GET['account']) && isset($_GET['username'])){
 			<li class="<?php echo $app=='alipay'?'active':null;?>"><a href="?app=alipay">支付宝</a></li><li class="<?php echo $app=='wxpay'?'active':null;?>"><a href="?app=wxpay">微信</a></li><li class="<?php echo $app=='qqpay'?'active':null;?>"><a href="?app=qqpay">QQ钱包</a></li><li class="<?php echo $app=='bank'?'active':null;?>"><a href="?app=bank">银行卡</a></li>
 		</ul>
 		<div class="tab-pane active" id="alipay">
-          <form action="?app=<?php echo $app?>" method="POST" role="form">
+          <form action="?app=<?php echo $app?>" method="POST" role="form"><input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(csrf_token('admin'), ENT_QUOTES, 'UTF-8')?>">
 			<input type="hidden" name="type" value="<?php echo $app?>"/>
 		    <div class="form-group">
 				<div class="input-group"><div class="input-group-addon">通道选择</div>

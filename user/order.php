@@ -486,6 +486,7 @@ function exportOrder(){
 		layer.alert('请选择导出时间范围');
 		return false;
 	}
+	params['csrf_token'] = window.EPAY_CSRF_TOKEN || '';
 	window.location.href='./download.php?act=order&'+$.param(params);
 }
 function printOrder(trade_no){

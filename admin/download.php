@@ -28,7 +28,8 @@ function get_safe_token_param($key, $required=false){
 function csv_text($value){
 	$value = str_replace(["\r", "\n"], ' ', (string)$value);
 	if(preg_match('/^[=+\-@]/', $value)) $value = "'".$value;
-	return $value;
+	$value = str_replace('"', '""', $value);
+	return '"'.$value.'"';
 }
 
 function display_type($type){
@@ -74,7 +75,7 @@ if($type == 'mybank'){
 	while($row = $rs->fetch())
 	{
 		$i++;
-		$data.=text_encoding($row['username']).','.$row['account'].','.($row['type']=='1'?'支付宝':'').',,'.$row['realmoney'].','.$remark."\r\n";
+		$data.=csv_text($row['username']).','.csv_text($row['account']).','.csv_text($row['type']=='1'?'支付宝':'').','.csv_text('').','.csv_text($row['realmoney']).','.csv_text($remark)."\r\n";
 	}
 
 }elseif($type == 'alipay'){
@@ -86,7 +87,7 @@ if($type == 'mybank'){
 	while($row = $rs->fetch())
 	{
 		$i++;
-		$data.=$i.','.$row['account'].','.text_encoding($row['username']).','.$row['realmoney'].','.$remark."\r\n";
+		$data.=csv_text($i).','.csv_text($row['account']).','.csv_text($row['username']).','.csv_text($row['realmoney']).','.csv_text($remark)."\r\n";
 	}
 
 }elseif($type == 'wxpay'){
@@ -103,7 +104,7 @@ if($type == 'mybank'){
 	while($row = $rs->fetch())
 	{
 		$i++;
-		$table.=$batch.$i.','.$row['account'].','.text_encoding($row['username']).',,'.$row['realmoney'].','.$remark."\r\n";
+		$table.=csv_text($batch.$i).','.csv_text($row['account']).','.csv_text($row['username']).','.csv_text('').','.csv_text($row['realmoney']).','.csv_text($remark)."\r\n";
 		$allmoney+=$row['realmoney'];
 	}
 
@@ -125,7 +126,7 @@ if($type == 'mybank'){
 	while($row = $rs->fetch())
 	{
 		$i++;
-		$data.=$i.','.display_type($row['type']).','.$row['account'].','.text_encoding($row['username']).','.$row['realmoney'].','.$remark."\r\n";
+		$data.=csv_text($i).','.csv_text(display_type($row['type'])).','.csv_text($row['account']).','.csv_text($row['username']).','.csv_text($row['realmoney']).','.csv_text($remark)."\r\n";
 	}
 
 }
@@ -289,7 +290,7 @@ while($row = $rs->fetch()){
 	if($row['status']==2){
 		$row['refundtime'] = $DB->findColumn('refundorder', 'addtime', ['trade_no'=>$row['trade_no']], 'refund_no DESC');
 	}
-	$file.='="'.$row['trade_no'].'",="'.$row['out_trade_no'].'",="'.$row['api_trade_no'].'",'.$row['uid'].','.$row['domain'].','.text_encoding($row['name']).','.$row['money'].','.$row['realmoney'].','.$row['getmoney'].','.$paytype[$row['type']].','.$row['channel'].','.$row['plugin'].','.$row['buyer'].','.$row['ip'].','.$row['addtime'].','.$row['endtime'].','.display_status($row['status']).','.($row['status']==2?$row['refundmoney']:'').','.$row['refundtime']."\r\n";
+	$file.=csv_text($row['trade_no']).','.csv_text($row['out_trade_no']).','.csv_text($row['api_trade_no']).','.csv_text($row['uid']).','.csv_text($row['domain']).','.csv_text($row['name']).','.csv_text($row['money']).','.csv_text($row['realmoney']).','.csv_text($row['getmoney']).','.csv_text($paytype[$row['type']]).','.csv_text($row['channel']).','.csv_text($row['plugin']).','.csv_text($row['buyer']).','.csv_text($row['ip']).','.csv_text($row['addtime']).','.csv_text($row['endtime']).','.csv_text(display_status($row['status'])).','.csv_text($row['status']==2?$row['refundmoney']:'').','.csv_text($row['refundtime'])."\r\n";
 }
 
 $file = hex2bin('efbbbf').$file;
@@ -339,7 +340,7 @@ $file="用户ID,上级用户ID,用户组,手机号,邮箱,QQ,结算方式,结算
 $rs = $DB->query("SELECT * FROM pre_user WHERE{$sql} order by uid desc limit 100000");
 while($row = $rs->fetch()){
 	$code_url = $siteurl.'paypage/?merchant='.authcode($row['uid'], 'ENCODE', SYS_KEY);
-	$file.=$row['uid'].','.$row['upid'].','.$group[$row['gid']].','.$row['phone'].','.$row['email'].','.$row['qq'].','.display_type($row['settle_id']).','.text_encoding($row['account']).','.text_encoding($row['username']).','.$row['money'].','.$row['deposit'].','.$row['addtime'].','.$row['lasttime'].','.$status_text[$row['status']].','.$permit_text[$row['pay']].','.$permit_text[$row['settle']].','.$cert_text[$row['cert']].','.$code_url."\r\n";
+	$file.=csv_text($row['uid']).','.csv_text($row['upid']).','.csv_text($group[$row['gid']]).','.csv_text($row['phone']).','.csv_text($row['email']).','.csv_text($row['qq']).','.csv_text(display_type($row['settle_id'])).','.csv_text($row['account']).','.csv_text($row['username']).','.csv_text($row['money']).','.csv_text($row['deposit']).','.csv_text($row['addtime']).','.csv_text($row['lasttime']).','.csv_text($status_text[$row['status']]).','.csv_text($permit_text[$row['pay']]).','.csv_text($permit_text[$row['settle']]).','.csv_text($cert_text[$row['cert']]).','.csv_text($code_url)."\r\n";
 }
 
 $file = hex2bin('efbbbf').$file;
@@ -564,7 +565,7 @@ $file="ID,商户号,支付方式,通道ID,关联订单号,商品名称,订单金
 
 $rs = $DB->query("SELECT A.*,B.money,B.name ordername,B.status orderstatus FROM pre_complain A LEFT JOIN pre_order B ON A.trade_no=B.trade_no WHERE{$sql} order by A.addtime desc limit 100000");
 while($row = $rs->fetch()){
-	$file.=''.$row['id'].','.$row['uid'].','.$paytype[$row['paytype']].','.$row['channel'].',="'.$row['trade_no'].'",'.$row['ordername'].','.$row['money'].','.$row['type'].','.$row['title'].','.str_replace(["\r\n", "\n"]," ",$row['content']).','.$row['addtime'].','.$row['edittime'].','.['0'=>'待处理','1'=>'处理中','2'=>'处理完成'][$row['status']]."\r\n";
+	$file.=csv_text($row['id']).','.csv_text($row['uid']).','.csv_text($paytype[$row['paytype']]).','.csv_text($row['channel']).','.csv_text($row['trade_no']).','.csv_text($row['ordername']).','.csv_text($row['money']).','.csv_text($row['type']).','.csv_text($row['title']).','.csv_text($row['content']).','.csv_text($row['addtime']).','.csv_text($row['edittime']).','.csv_text(['0'=>'待处理','1'=>'处理中','2'=>'处理完成'][$row['status']])."\r\n";
 }
 
 $file = hex2bin('efbbbf').$file;

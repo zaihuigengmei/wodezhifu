@@ -79,7 +79,10 @@ if($conf['settle_type']==1){
 
 $copy = [];
 if(isset($_GET['copy'])){
-	$copy = $DB->find('transfer', '*', ['biz_no'=>trim($_GET['copy'])]);
+	$copy_no = trim($_GET['copy']);
+	if(!preg_match('/^[a-zA-Z0-9_-]{8,64}$/', $copy_no)) showmsg('付款记录参数格式错误',3);
+	$copy = $DB->find('transfer', '*', ['biz_no'=>$copy_no, 'uid'=>$uid]);
+	if(!$copy) showmsg('付款记录不存在或无权访问',3);
 }
 ?>
 	<div class="panel panel-default">
