@@ -94,9 +94,11 @@ class epusdt_plugin
         $trade_no = $data['trade_no'] ?? ($data['trade_id'] ?? '');
         $money = $data['money'] ?? ($data['amount'] ?? 0);
         $status = $data['trade_status'] ?? ($data['status'] ?? '');
+        $pid = isset($data['pid']) ? trim((string)$data['pid']) : trim((string)$channel['appid']);
 
         if (($status === 'TRADE_SUCCESS' || $status === 'TRADE_FINISHED' || $status === '2' || $status === 2)
             && $out_trade_no == TRADE_NO
+            && $pid === trim((string)$channel['appid'])
             && round((float)$money, 2) == round((float)$order['realmoney'], 2)) {
             processNotify($order, $trade_no);
             return ['type' => 'html', 'data' => 'success'];
@@ -119,9 +121,11 @@ class epusdt_plugin
         $trade_no = $data['trade_no'] ?? ($data['trade_id'] ?? '');
         $money = $data['money'] ?? ($data['amount'] ?? 0);
         $status = $data['trade_status'] ?? ($data['status'] ?? '');
+        $pid = isset($data['pid']) ? trim((string)$data['pid']) : trim((string)$channel['appid']);
 
         if (($status === 'TRADE_SUCCESS' || $status === 'TRADE_FINISHED' || $status === '2' || $status === 2)
             && $out_trade_no == TRADE_NO
+            && $pid === trim((string)$channel['appid'])
             && round((float)$money, 2) == round((float)$order['realmoney'], 2)) {
             processReturn($order, $trade_no);
             return ['type' => 'page', 'page' => 'return'];

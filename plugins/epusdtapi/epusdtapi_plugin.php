@@ -129,8 +129,11 @@ class epusdtapi_plugin
         $money = $data['amount'] ?? 0;
         $status = (int)($data['status'] ?? 0);
         $buyer = (string)($data['block_transaction_id'] ?? ($data['receive_address'] ?? ''));
+        $pid = isset($data['pid']) ? trim((string)$data['pid']) : trim((string)$channel['appid']);
+        $currency = isset($data['currency']) ? strtolower(trim((string)$data['currency'])) : '';
+        $needCurrency = strtolower(trim((string)($channel['fiat'] ?: 'cny')));
 
-        if ($status === 2 && $outTradeNo === TRADE_NO && round((float)$money, 2) === round((float)$order['realmoney'], 2)) {
+        if ($status === 2 && $outTradeNo === TRADE_NO && $pid === trim((string)$channel['appid']) && $currency === $needCurrency && round((float)$money, 2) === round((float)$order['realmoney'], 2)) {
             processNotify($order, $tradeNo, $buyer);
             exit('ok');
         }
