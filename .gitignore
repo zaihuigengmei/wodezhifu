@@ -1,0 +1,31 @@
+# Runtime configuration and secrets
+/config.php
+/.env
+
+# Installer/runtime state
+/install/install.lock
+
+# Local backups created during security hardening
+*.bak.*
+*.bak
+*.old
+*.orig
+*.save
+*.swp
+
+# Runtime data/logs/cache/uploads
+/logs/
+/cache/
+/runtime/
+/upload/
+/uploads/
+/mysql/
+
+# Archive/database dumps
+*.sql
+*.tar
+*.tar.gz
+*.tgz
+*.zip
+*.7z
+*.rar
