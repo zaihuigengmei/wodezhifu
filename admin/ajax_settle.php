@@ -4,6 +4,7 @@ if($islogin==1){}else exit("<script language='javascript'>window.location.href='
 $act=isset($_GET['act'])?daddslashes($_GET['act']):null;
 
 if(!checkRefererHost())exit('{"code":403}');
+csrf_check_json('admin');
 
 @header('Content-Type: application/json; charset=UTF-8');
 

@@ -13,6 +13,7 @@ if($islogin==1){}else exit("<script language='javascript'>window.location.href='
 $mod=isset($_GET['mod'])?$_GET['mod']:null;
 $dangerMods = ['cleanorder','cleansettle','cleanrecord','cleanorderi','cleansettlei','cleanrecordi','cleantransferi','cleanpsorderi','cleanlogi'];
 if(in_array($mod, $dangerMods, true) && !checkRefererHost())exit();
+if(in_array($mod, $dangerMods, true)) csrf_check_page('admin');
 if($mod=='cleancache'){
 $CACHE->clear();
 if(function_exists("opcache_reset"))@opcache_reset();
@@ -71,26 +72,26 @@ showmsg('删除登录记录成功！',1);
 <div class="panel-heading"><h3 class="panel-title">系统数据清理</h3></div>
 <div class="panel-body">
 <a href="./clean.php?mod=cleancache" class="btn btn-block btn-default">清理设置缓存</a><br/>
-<a href="./clean.php?mod=cleanorder" onclick="return confirm('你确实要删除30天前的订单记录吗？');" class="btn btn-block btn-default">删除30天前订单记录</a><br/>
-<a href="./clean.php?mod=cleansettle" onclick="return confirm('你确实要删除30天前的结算记录吗？');" class="btn btn-block btn-default">删除30天前结算记录</a><br/>
-<a href="./clean.php?mod=cleanrecord" onclick="return confirm('你确实要删除30天前的资金明细吗？');" class="btn btn-block btn-default">删除30天前资金明细</a><br/>
+<a href="./clean.php?mod=cleanorder&csrf_token=<?php echo urlencode(csrf_token('admin'))?>" onclick="return confirm('你确实要删除30天前的订单记录吗？');" class="btn btn-block btn-default">删除30天前订单记录</a><br/>
+<a href="./clean.php?mod=cleansettle&csrf_token=<?php echo urlencode(csrf_token('admin'))?>" onclick="return confirm('你确实要删除30天前的结算记录吗？');" class="btn btn-block btn-default">删除30天前结算记录</a><br/>
+<a href="./clean.php?mod=cleanrecord&csrf_token=<?php echo urlencode(csrf_token('admin'))?>" onclick="return confirm('你确实要删除30天前的资金明细吗？');" class="btn btn-block btn-default">删除30天前资金明细</a><br/>
 <h4>自定义清理：</h4>
-<form action="./clean.php?mod=cleanorderi" method="post" role="form"><input type="hidden" name="do" value="submit"/>
+<form action="./clean.php?mod=cleanorderi" method="post" role="form"><input type="hidden" name="do" value="submit"/><input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(csrf_token('admin'), ENT_QUOTES, 'UTF-8')?>"/>
 <b>订单记录</b>：<input type="text" name="days" value="" placeholder="天数"/>天前的订单记录&nbsp;<input type="submit" name="submit" value="立即删除" class="btn btn-sm btn-danger" onclick="return confirm('删除后无法恢复，确定继续吗？');"/>
 </form><br/>
-<form action="./clean.php?mod=cleansettlei" method="post" role="form"><input type="hidden" name="do" value="submit"/>
+<form action="./clean.php?mod=cleansettlei" method="post" role="form"><input type="hidden" name="do" value="submit"/><input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(csrf_token('admin'), ENT_QUOTES, 'UTF-8')?>"/>
 <b>结算记录</b>：<input type="text" name="days" value="" placeholder="天数"/>天前的结算记录&nbsp;<input type="submit" name="submit" value="立即删除" class="btn btn-sm btn-danger" onclick="return confirm('删除后无法恢复，确定继续吗？');"/>
 </form><br/>
-<form action="./clean.php?mod=cleanrecordi" method="post" role="form"><input type="hidden" name="do" value="submit"/>
+<form action="./clean.php?mod=cleanrecordi" method="post" role="form"><input type="hidden" name="do" value="submit"/><input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(csrf_token('admin'), ENT_QUOTES, 'UTF-8')?>"/>
 <b>资金明细</b>：<input type="text" name="days" value="" placeholder="天数"/>天前的订单记录&nbsp;<input type="submit" name="submit" value="立即删除" class="btn btn-sm btn-danger" onclick="return confirm('删除后无法恢复，确定继续吗？');"/>
 </form><br/>
-<form action="./clean.php?mod=cleantransferi" method="post" role="form"><input type="hidden" name="do" value="submit"/>
+<form action="./clean.php?mod=cleantransferi" method="post" role="form"><input type="hidden" name="do" value="submit"/><input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(csrf_token('admin'), ENT_QUOTES, 'UTF-8')?>"/>
 <b>付款记录</b>：<input type="text" name="days" value="" placeholder="天数"/>天前的付款记录&nbsp;<input type="submit" name="submit" value="立即删除" class="btn btn-sm btn-danger" onclick="return confirm('删除后无法恢复，确定继续吗？');"/>
 </form><br/>
-<form action="./clean.php?mod=cleanpsorderi" method="post" role="form"><input type="hidden" name="do" value="submit"/>
+<form action="./clean.php?mod=cleanpsorderi" method="post" role="form"><input type="hidden" name="do" value="submit"/><input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(csrf_token('admin'), ENT_QUOTES, 'UTF-8')?>"/>
 <b>分账记录</b>：<input type="text" name="days" value="" placeholder="天数"/>天前的分账记录&nbsp;<input type="submit" name="submit" value="立即删除" class="btn btn-sm btn-danger" onclick="return confirm('删除后无法恢复，确定继续吗？');"/>
 </form><br/>
-<form action="./clean.php?mod=cleanlogi" method="post" role="form"><input type="hidden" name="do" value="submit"/>
+<form action="./clean.php?mod=cleanlogi" method="post" role="form"><input type="hidden" name="do" value="submit"/><input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(csrf_token('admin'), ENT_QUOTES, 'UTF-8')?>"/>
 <b>登录记录</b>：<input type="text" name="days" value="" placeholder="天数"/>天前的登录记录&nbsp;<input type="submit" name="submit" value="立即删除" class="btn btn-sm btn-danger" onclick="return confirm('删除后无法恢复，确定继续吗？');"/>
 </form><br/>
 </div>

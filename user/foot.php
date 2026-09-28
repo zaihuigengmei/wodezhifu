@@ -12,6 +12,16 @@
 </div>
 
 <script src="<?php echo $cdnpublic?>jquery/3.4.1/jquery.min.js"></script>
+<script>
+if (window.jQuery && window.EPAY_CSRF_TOKEN) {
+  $.ajaxSetup({headers: {'X-CSRF-Token': window.EPAY_CSRF_TOKEN}});
+  $(function(){
+    $('form[method="post" i]').each(function(){
+      if (!this.querySelector('input[name="csrf_token"]')) $('<input>').attr({type:'hidden', name:'csrf_token', value:window.EPAY_CSRF_TOKEN}).appendTo(this);
+    });
+  });
+}
+</script>
 <script src="<?php echo $cdnpublic?>twitter-bootstrap/3.4.1/js/bootstrap.min.js"></script>
 <script src="./assets/js/ui-load.js"></script>
 <script src="./assets/js/ui-jp.config.js"></script>

@@ -26,6 +26,18 @@ if($admin_cdnpublic==1){
   <script src="<?php echo $cdnpublic?>modernizr/2.8.3/modernizr.min.js"></script>
   <script src="<?php echo $cdnpublic?>jquery/3.4.1/jquery.min.js"></script>
   <script src="<?php echo $cdnpublic?>twitter-bootstrap/3.4.1/js/bootstrap.min.js"></script>
+  <?php if($islogin==1){?><meta name="csrf-token" content="<?php echo htmlspecialchars(csrf_token('admin'), ENT_QUOTES, 'UTF-8')?>"><?php }?>
+  <script>
+  window.EPAY_CSRF_TOKEN = document.querySelector('meta[name="csrf-token"]') ? document.querySelector('meta[name="csrf-token"]').getAttribute('content') : '';
+  if (window.jQuery && window.EPAY_CSRF_TOKEN) {
+    $.ajaxSetup({headers: {'X-CSRF-Token': window.EPAY_CSRF_TOKEN}});
+    $(function(){
+      $('form[method="post" i]').each(function(){
+        if (!this.querySelector('input[name="csrf_token"]')) $('<input>').attr({type:'hidden', name:'csrf_token', value:window.EPAY_CSRF_TOKEN}).appendTo(this);
+      });
+    });
+  }
+  </script>
   <!--[if lt IE 9]>
     <script src="<?php echo $cdnpublic?>html5shiv/3.7.3/html5shiv.min.js"></script>
     <script src="<?php echo $cdnpublic?>respond.js/1.4.2/respond.min.js"></script>

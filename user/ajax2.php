@@ -4,6 +4,7 @@ if($islogin2==1){}else exit('{"code":-3,"msg":"No Login"}');
 $act=isset($_GET['act'])?daddslashes($_GET['act']):null;
 
 if(!checkRefererHost() && !checkwechat())exit('{"code":403}');
+csrf_check_json('user');
 
 @header('Content-Type: application/json; charset=UTF-8');
 

@@ -29,6 +29,10 @@ $conf = array_merge($conf, $groupconfig);
   <link rel="stylesheet" href="./assets/css/font.css" type="text/css" />
   <link rel="stylesheet" href="./assets/css/app.css" type="text/css" />
   <link rel="stylesheet" href="../assets/css/bootstrap-table.css?v=1"/>
+  <?php if($islogin2==1){?><meta name="csrf-token" content="<?php echo htmlspecialchars(csrf_token('user'), ENT_QUOTES, 'UTF-8')?>"><?php }?>
+  <script>
+  window.EPAY_CSRF_TOKEN = document.querySelector('meta[name="csrf-token"]') ? document.querySelector('meta[name="csrf-token"]').getAttribute('content') : '';
+  </script>
 </head>
 <body>
 <div class="app app-header-fixed  ">

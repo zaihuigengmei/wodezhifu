@@ -974,6 +974,30 @@ function checkRefererHost(){
 	if(strpos($http_host,':') !== false) $http_host = substr($http_host, 0, strpos($http_host, ':'));
 	return hash_equals($http_host, $ref_host);
 }
+
+function csrf_token($scope='global'){
+	if(session_status() !== PHP_SESSION_ACTIVE) @session_start();
+	$scope = preg_replace('/[^a-zA-Z0-9_-]/', '', (string)$scope) ?: 'global';
+	if(empty($_SESSION['csrf_tokens']) || !is_array($_SESSION['csrf_tokens'])) $_SESSION['csrf_tokens'] = [];
+	if(empty($_SESSION['csrf_tokens'][$scope])) $_SESSION['csrf_tokens'][$scope] = bin2hex(random_bytes(32));
+	return $_SESSION['csrf_tokens'][$scope];
+}
+
+function csrf_verify($scope='global'){
+	if(session_status() !== PHP_SESSION_ACTIVE) @session_start();
+	$scope = preg_replace('/[^a-zA-Z0-9_-]/', '', (string)$scope) ?: 'global';
+	$expect = $_SESSION['csrf_tokens'][$scope] ?? '';
+	$got = $_SERVER['HTTP_X_CSRF_TOKEN'] ?? ($_POST['csrf_token'] ?? ($_GET['csrf_token'] ?? ''));
+	return is_string($expect) && $expect !== '' && is_string($got) && hash_equals($expect, $got);
+}
+
+function csrf_check_json($scope='global'){
+	if(!csrf_verify($scope)) exit('{"code":403,"msg":"CSRF TOKEN ERROR"}');
+}
+
+function csrf_check_page($scope='global'){
+	if(!csrf_verify($scope)) showmsg('CSRF TOKEN ERROR', 3);
+}
 function randFloat($min=0, $max=1){
 	return $min + mt_rand()/mt_getrandmax() * ($max-$min);
 }
