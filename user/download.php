@@ -17,6 +17,13 @@ function display_status($status){
 	}
 }
 
+function csv_text($value){
+	$value = str_replace(["", "
+"], ' ', (string)$value);
+	if(preg_match('/^[=+\-@]/', $value)) $value = "'".$value;
+	$value = str_replace('"', '""', $value);
+	return '"'.$value.'"';
+}
 function display_psstatus($status){
 	if($status==1){
 		return '已提交';
@@ -102,7 +109,7 @@ while($row = $rs->fetch()){
 	if($row['status']==2){
 		$row['refundtime'] = $DB->findColumn('refundorder', 'addtime', ['trade_no'=>$row['trade_no']], 'refund_no DESC');
 	}
-	$file.='="'.$row['trade_no'].'",="'.$row['out_trade_no'].'",="'.$row['api_trade_no'].'",'.$row['submchid'].','.$row['domain'].','.$row['name'].','.$row['money'].','.$row['realmoney'].','.$row['getmoney'].','.$paytype[$row['type']].','.$row['buyer'].','.$row['ip'].','.$row['addtime'].','.$row['endtime'].','.display_status($row['status']).','.($row['status']==2?$row['refundmoney']:'').','.$row['refundtime']."\r\n";
+	$file.=csv_text($row['trade_no']).','.csv_text($row['out_trade_no']).','.csv_text($row['api_trade_no']).','.csv_text($row['submchid']).','.csv_text($row['domain']).','.csv_text($row['name']).','.$row['money'].','.$row['realmoney'].','.$row['getmoney'].','.csv_text($paytype[$row['type']]).','.csv_text($row['buyer']).','.csv_text($row['ip']).','.csv_text($row['addtime']).','.csv_text($row['endtime']).','.csv_text(display_status($row['status'])).','.($row['status']==2?$row['refundmoney']:'').','.csv_text($row['refundtime'])."\r\n";
 }
 
 $file = hex2bin('efbbbf').$file;

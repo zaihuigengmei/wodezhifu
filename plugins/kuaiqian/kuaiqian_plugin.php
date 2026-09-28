@@ -505,7 +505,9 @@ class kuaiqian_plugin
 
 		if($verify_result) {//验证成功
 			if ($_GET['payResult'] == '10') {
-				if($_GET['orderId'] == TRADE_NO){
+				$pay_amount = isset($_GET['payAmount']) ? intval($_GET['payAmount']) : 0;
+				$need_amount = intval(round($order['realmoney'] * 100));
+				if($_GET['orderId'] == TRADE_NO && $pay_amount === $need_amount){
 					processNotify($order, $_GET['dealId']);
 				}
 			}
@@ -531,7 +533,9 @@ class kuaiqian_plugin
 		}
 
 		if($result['body']['orderStatus'] == 'S'){
-			if($result['head']['externalRefNumber'] == TRADE_NO){
+			$pay_amount = isset($result['body']['amount']) ? intval($result['body']['amount']) : 0;
+			$need_amount = intval(round($order['realmoney'] * 100));
+			if($result['head']['externalRefNumber'] == TRADE_NO && $pay_amount === $need_amount){
 				processNotify($order, $result['body']['idOrderCtrl'], $result['body']['thirdPartyBuyerId']);
 			}
 		}

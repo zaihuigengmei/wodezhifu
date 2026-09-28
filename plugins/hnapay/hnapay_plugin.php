@@ -659,9 +659,16 @@ class hnapay_plugin
 
 		try{
 			$client = new HnaPayApi($channel['appid'], $channel['appkey'], $channel['appsecret'], 2);
-			$result = $client->transferProof($bizParam['orderid']);
-			file_put_contents(ROOT.'assets/uploads/'.$bizParam['orderid'].'.png', base64_decode($result['payCertificate']));
-			$image = '/assets/uploads/'.$bizParam['orderid'].'.png';
+			$orderid = trim($bizParam['orderid']);
+			if(!preg_match('/^[A-Za-z0-9_-]{1,64}$/', $orderid)) throw new Exception('订单号格式不合法');
+			$result = $client->transferProof($orderid);
+			$dir = ROOT.'assets/uploads/';
+			if(!is_dir($dir)) mkdir($dir, 0755, true);
+			$realDir = realpath($dir);
+			if($realDir === false) throw new Exception('保存目录不合法');
+			$path = $realDir.'/'.$orderid.'.png';
+			file_put_contents($path, base64_decode($result['payCertificate']));
+			$image = '/assets/uploads/'.$orderid.'.png';
 			return ['code'=>0, 'msg'=>'电子回单生成成功！', 'download_url'=>$image];
 		}catch(Exception $ex){
 			return ['code'=>-1, 'msg'=>$ex->getMessage()];

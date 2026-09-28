@@ -11,6 +11,8 @@ if($islogin==1){}else exit("<script language='javascript'>window.location.href='
     <div class="col-xs-12 col-sm-10 col-lg-8 center-block" style="float: none;">
 <?php
 $mod=isset($_GET['mod'])?$_GET['mod']:null;
+$dangerMods = ['cleanorder','cleansettle','cleanrecord','cleanorderi','cleansettlei','cleanrecordi','cleantransferi','cleanpsorderi','cleanlogi'];
+if(in_array($mod, $dangerMods, true) && !checkRefererHost())exit();
 if($mod=='cleancache'){
 $CACHE->clear();
 if(function_exists("opcache_reset"))@opcache_reset();

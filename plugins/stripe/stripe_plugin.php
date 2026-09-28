@@ -68,6 +68,18 @@ class stripe_plugin
 		'bindwxa' => false, //是否支持绑定微信小程序
 	];
 
+
+	static private function verifyPaidObject($object, $order, $channel){
+		if(!$channel['currency_rate']) $channel['currency_rate'] = 1;
+		if(!$channel['currency_code']) $channel['currency_code'] = 'cny';
+		$need_amount = intval(round($order['realmoney'] * $channel['currency_rate'] * 100));
+		$need_currency = strtolower($channel['currency_code']);
+		$ref = isset($object['client_reference_id']) ? $object['client_reference_id'] : (isset($object['metadata']['order_id']) ? $object['metadata']['order_id'] : null);
+		$amount = isset($object['amount_total']) ? intval($object['amount_total']) : (isset($object['amount_received']) ? intval($object['amount_received']) : null);
+		$currency = isset($object['currency']) ? strtolower($object['currency']) : null;
+		return $ref === $order['trade_no'] && $amount === $need_amount && $currency === $need_currency;
+	}
+
 	static public function submit(){
 		global $siteurl, $channel, $order, $ordername, $sitename, $conf;
 
@@ -241,17 +253,21 @@ class stripe_plugin
 		switch($event['type']){
 			case 'checkout.session.completed':
 				$session = $event['data']['object'];
-				if ($session['payment_status'] == 'paid') {
+				if ($session['payment_status'] == 'paid' && self::verifyPaidObject($session, $order, $channel)) {
 					processNotify($order, $session['payment_intent']);
 				}
 				break;
 			case 'checkout.session.async_payment_succeeded':
 				$session = $event['data']['object'];
-				processNotify($order, $session['payment_intent']);
+				if(self::verifyPaidObject($session, $order, $channel)){
+					processNotify($order, $session['payment_intent']);
+				}
 				break;
 			case 'payment_intent.succeeded':
 				$session = $event['data']['object'];
-				processNotify($order, $session['id']);
+				if(self::verifyPaidObject($session, $order, $channel)){
+					processNotify($order, $session['id']);
+				}
 				break;
 		}
 		return ['type'=>'html','data'=>'success'];

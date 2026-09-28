@@ -32,10 +32,11 @@ if($islogin==1){}else exit("<script language='javascript'>window.location.href='
 if(!isset($_SESSION['paypwd']) || $_SESSION['paypwd']!==$conf['admin_paypwd'])showmsg('支付密码错误，请返回重新进入该页面');
 
 if(isset($_GET['batch'])){
-	$batch=$_GET['batch'];
-	$row=$DB->getRow("SELECT * from pre_batch where batch='$batch'");
+	$batch=trim($_GET['batch']);
+	if(!preg_match('/^[A-Za-z0-9_.:-]{1,64}$/', $batch))showmsg('批次号格式错误');
+	$row=$DB->getRow("SELECT * from pre_batch where batch=:batch", [':batch'=>$batch]);
 	if(!$row)showmsg('批次号不存在');
-	$list=$DB->getAll("SELECT * FROM pre_settle WHERE batch='{$batch}' and type={$type}");
+	$list=$DB->getAll("SELECT * FROM pre_settle WHERE batch=:batch and type=:type", [':batch'=>$batch, ':type'=>$type]);
 
 	$channel_select = $DB->getAll("SELECT id,name,plugin FROM pre_channel WHERE plugin IN (SELECT name FROM pre_plugin WHERE transtypes LIKE '%".$app."%')");
 

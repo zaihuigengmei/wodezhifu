@@ -583,7 +583,9 @@ function get_main_host($url){
 
 function do_notify($url){
 	global $conf;
+	if(function_exists('epay_is_safe_outbound_url') && !epay_is_safe_outbound_url($url))return false;
 	if($conf['proxy'] == 2 && !empty($conf['proxy_apiurl']) && !empty($conf['proxy_apikey'])){
+		if(function_exists('epay_is_safe_outbound_url') && !epay_is_safe_outbound_url($conf['proxy_apiurl']))return false;
 		$url = base64_encode($url);
 		$timestamp = strval(time());
 		$param = ['url' => $url, 'timestamp' => $timestamp, 'sign' => md5($url.$timestamp.$conf['proxy_apikey'])];

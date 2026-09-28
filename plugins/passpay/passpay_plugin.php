@@ -334,7 +334,8 @@ class passpay_plugin
 				$out_trade_no = $_POST['out_trade_no'];
 				$trade_no = $_POST['trade_no'];
 				$bill_trade_no = $_POST['channel_order_sn'];
-				if($out_trade_no == TRADE_NO){
+				$notify_amount = isset($_POST['total_amount']) ? round((float)$_POST['total_amount'], 2) : null;
+				if($out_trade_no == TRADE_NO && $notify_amount !== null && $notify_amount == round((float)$order['realmoney'], 2)){
 					processNotify($order, $trade_no, null, $bill_trade_no);
 				}
 				return ['type'=>'html','data'=>'success'];

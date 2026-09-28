@@ -57,7 +57,7 @@ function display_status($status){
 }
 
 function text_encoding($text){
-	return $text;
+	return csv_text($text);
 }
 
 switch($act){

@@ -798,8 +798,10 @@ case 'order': //订单详情
 break;
 case 'subOrders':
 	$trade_no=user_safe_token($_GET['trade_no'], '订单号');
+	$order = $DB->find('order', 'trade_no,settle', ['trade_no'=>$trade_no, 'uid'=>$uid]);
+	if(!$order) exit('{"code":-1,"msg":"当前订单不存在！"}');
 	$list = \lib\Payment::getSubOrders($trade_no);
-	exit(json_encode(['code'=>0, 'data'=>$list, 'settle'=>$DB->findColumn('order', 'settle', ['trade_no'=>$trade_no])]));
+	exit(json_encode(['code'=>0, 'data'=>$list, 'settle'=>$order['settle']]));
 break;
 case 'notify':
 	$trade_no=user_safe_token($_POST['trade_no'], '订单号');

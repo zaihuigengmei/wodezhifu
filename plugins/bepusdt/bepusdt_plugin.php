@@ -124,7 +124,9 @@ class bepusdt_plugin
         $out_trade_no = $data['order_id'];    // 商户订单号
         $trade_no     = $data['trade_id'];    // BEpusdt 交易ID
         $buyer        = mb_substr($data['buyer'], -28);
-        if ($data['status'] === 2 && $out_trade_no == TRADE_NO) {
+        $paid_amount = isset($data['amount']) ? round((float)$data['amount'], 2) : null;
+        $need_amount = round((float)$order['realmoney'], 2);
+        if ($data['status'] === 2 && $out_trade_no == TRADE_NO && $paid_amount !== null && $paid_amount == $need_amount) {
             processNotify($order, $trade_no, $buyer);
 
             exit('ok');

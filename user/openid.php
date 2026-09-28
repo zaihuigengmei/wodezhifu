@@ -2,8 +2,8 @@
 $nosession=true;
 include("../includes/common.php");
 if(isset($_GET['sid'])){
-	$sid = trim(daddslashes($_GET['sid']));
-	if(!preg_match('/^(.[a-zA-Z0-9]+)$/',$sid))exit("Access Denied");
+	$sid = trim($_GET['sid']);
+	if(!preg_match('/^[A-Za-z0-9,-]{16,128}$/',$sid))exit("Access Denied");
 	session_id($sid);
 	session_start();
 }
