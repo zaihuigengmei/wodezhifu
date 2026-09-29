@@ -252,12 +252,12 @@ function submitlogin(){
           $("#totp_code").focus();
           return false;
         }
-        layer.alert(data.msg, {icon: 2});
+        layer.alert(typeof data.msg === 'string' && data.msg.trim() ? data.msg : '登录失败：服务器未返回错误详情，请检查网络请求响应和 PHP 日志', {icon: 2});
       }
     },
-    error:function(data){
+    error:function(xhr){
       layer.close(ii);
-      layer.msg('服务器错误');
+      layer.msg('登录请求失败（HTTP ' + (xhr.status || '网络错误') + '），请检查 PHP 日志');
     }
   });
   return false;
@@ -275,9 +275,12 @@ function doTotp(){
 			layer.msg('登录成功，正在跳转', {icon: 1,shade: 0.01,time: 15000});
       window.location.href = './';
 		}else{
-			layer.alert(res.msg, {icon: 2});
+			layer.alert(typeof res.msg === 'string' && res.msg.trim() ? res.msg : '动态口令验证失败：服务器未返回错误详情，请重新验证用户名和密码', {icon: 2});
 		}
-	}, 'json');
+	}, 'json').fail(function(xhr){
+		layer.close(ii);
+		layer.alert('动态口令请求失败（HTTP ' + (xhr.status || '网络错误') + '），请检查浏览器 Cookie 与 PHP 日志', {icon: 2});
+	});
 	return false;
 }
 function findpwd(){
