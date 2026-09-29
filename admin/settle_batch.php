@@ -25,6 +25,7 @@ if($type == 1){
 }
 $title=$typename.'批量转账';
 include './head.php';
+function e($v){return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8');}
 if($islogin==1){}else exit("<script language='javascript'>window.location.href='./login.php';</script>");
 ?>
   <div class="container" style="padding-top:70px;">
@@ -168,7 +169,8 @@ $(document).ready(function(){
 			<?php
 			echo '<tr><td colspan="6" align="center">总共<span id="allnum">'.count($list).'<span>个记录,已经处理<span id="donenum">0</span>个记录！</td></tr>';
 			foreach($list as $row) {
-			echo '<tr><td uin="'.$row['id'].'"><input name="uins" type="checkbox" id="uins" class="uins" value="'.$row['id'].'" '.($row['transfer_status']!=1?'checked':null).'>'.$row['id'].'</td><td>'.$row['uid'].'</td><td>'.$row['account'].'</td><td>'.$row['username'].'</td><td class="money">'.$row['realmoney'].'</td><td id="id'.$row['id'].'" uin="'.$row['id'].'" class="nocheck recheck" align="center">'.($row['transfer_status']!=1?'<span class="btn btn-xs btn-block btn-primary">立即转账</span>':'<font color="green">已完成</font>').'</td></tr><tr><td><span style="color:silver;">结果</span></td><td colspan="5" id="res'.$row['id'].'"><font color="blue">'.($row['transfer_status']==1?'转账订单号:'.$row['transfer_result'].' 支付时间:'.$row['transfer_date']:$row['transfer_result']).'</font></td></tr>';
+			$result_text = $row['transfer_status']==1 ? '转账订单号:'.$row['transfer_result'].' 支付时间:'.$row['transfer_date'] : $row['transfer_result'];
+			echo '<tr><td uin="'.intval($row['id']).'"><input name="uins" type="checkbox" id="uins" class="uins" value="'.intval($row['id']).'" '.($row['transfer_status']!=1?'checked':null).'>'.intval($row['id']).'</td><td>'.intval($row['uid']).'</td><td>'.e($row['account']).'</td><td>'.e($row['username']).'</td><td class="money">'.e($row['realmoney']).'</td><td id="id'.intval($row['id']).'" uin="'.intval($row['id']).'" class="nocheck recheck" align="center">'.($row['transfer_status']!=1?'<span class="btn btn-xs btn-block btn-primary">立即转账</span>':'<font color="green">已完成</font>').'</td></tr><tr><td><span style="color:silver;">结果</span></td><td colspan="5" id="res'.intval($row['id']).'"><font color="blue">'.e($result_text).'</font></td></tr>';
 			}
 			?>
 		</tbody>

@@ -131,8 +131,9 @@ $list = $DB->getAll("SELECT * FROM pre_anounce ORDER BY sort ASC");
 <script>
 function setStatus(id,status) {
 	$.ajax({
-		type : 'GET',
-		url : 'ajax.php?act=setGonggao&id='+id+'&status='+status,
+		type : 'POST',
+		url : 'ajax.php?act=setGonggao',
+		data : {id:id,status:status},
 		dataType : 'json',
 		success : function(data) {
 			if(data.code == 0){
@@ -152,8 +153,9 @@ function delItem(id) {
 		btn: ['确定','取消']
 	}, function(){
 		$.ajax({
-			type : 'GET',
-			url : 'ajax.php?act=delGonggao&id='+id,
+			type : 'POST',
+			url : 'ajax.php?act=delGonggao',
+			data : {id:id},
 			dataType : 'json',
 			success : function(data) {
 				if(data.code == 0){

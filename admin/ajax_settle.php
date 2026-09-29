@@ -93,8 +93,9 @@ case 'complete_batch':
 	exit('{"code":0,"msg":"succ"}');
 break;
 case 'setSettleStatus':
-	$id=intval($_GET['id']);
-	$status=intval($_GET['status']);
+	if($_SERVER['REQUEST_METHOD'] !== 'POST') exit('{"code":405,"msg":"Method Not Allowed"}');
+	$id=intval($_POST['id']);
+	$status=intval($_POST['status']);
 	if($status==4){
 		$row = $DB->find('settle', 'uid,money', ['id'=>$id]);
 		if(!$row) exit('{"code":200}');

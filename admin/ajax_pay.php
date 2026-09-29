@@ -25,7 +25,7 @@ function admin_safe_token($value, $name='参数'){
 }
 function admin_safe_text($value, $max=128){
 	$value = trim((string)$value);
-	if(mb_strlen($value) > $max) exit('{"code":-1,"msg":"文本过长"}');
+	if(strlen($value) > $max * 3) exit('{"code":-1,"msg":"文本过长"}');
 	return daddslashes($value);
 }
 
@@ -88,8 +88,9 @@ case 'getPayType':
 	exit(json_encode($result));
 break;
 case 'setPayType':
-	$id=intval($_GET['id']);
-	$status=intval($_GET['status']);
+	if($_SERVER['REQUEST_METHOD'] !== 'POST') exit('{"code":405,"msg":"Method Not Allowed"}');
+	$id=intval($_POST['id']);
+	$status=intval($_POST['status']);
 	$row=$DB->getRow("select * from pre_type where id='$id' limit 1");
 	if(!$row)
 		exit('{"code":-1,"msg":"当前支付方式不存在！"}');
@@ -98,7 +99,8 @@ case 'setPayType':
 	else exit('{"code":-1,"msg":"修改支付方式失败['.$DB->error().']"}');
 break;
 case 'delPayType':
-	$id=intval($_GET['id']);
+	if($_SERVER['REQUEST_METHOD'] !== 'POST') exit('{"code":405,"msg":"Method Not Allowed"}');
+	$id=intval($_POST['id']);
 	$row=$DB->getRow("select * from pre_type where id='$id' limit 1");
 	if(!$row)
 		exit('{"code":-1,"msg":"当前支付方式不存在！"}');
@@ -203,8 +205,9 @@ case 'getSubChannels':
 	exit(json_encode($result));
 break;
 case 'setChannel':
-	$id=intval($_GET['id']);
-	$status=intval($_GET['status']);
+	if($_SERVER['REQUEST_METHOD'] !== 'POST') exit('{"code":405,"msg":"Method Not Allowed"}');
+	$id=intval($_POST['id']);
+	$status=intval($_POST['status']);
 	$row=$DB->getRow("SELECT * FROM pre_channel WHERE id='$id'");
 	if(!$row)
 		exit('{"code":-1,"msg":"当前支付通道不存在！"}');
@@ -219,7 +222,8 @@ case 'setChannel':
 	else exit('{"code":-1,"msg":"修改支付通道失败['.$DB->error().']"}');
 break;
 case 'delChannel':
-	$id=intval($_GET['id']);
+	if($_SERVER['REQUEST_METHOD'] !== 'POST') exit('{"code":405,"msg":"Method Not Allowed"}');
+	$id=intval($_POST['id']);
 	$row=$DB->getRow("SELECT * FROM pre_channel WHERE id='$id'");
 	if(!$row)
 		exit('{"code":-1,"msg":"当前支付通道不存在！"}');
@@ -455,8 +459,9 @@ case 'getRoll':
 	exit(json_encode($result));
 break;
 case 'setRoll':
-	$id=intval($_GET['id']);
-	$status=intval($_GET['status']);
+	if($_SERVER['REQUEST_METHOD'] !== 'POST') exit('{"code":405,"msg":"Method Not Allowed"}');
+	$id=intval($_POST['id']);
+	$status=intval($_POST['status']);
 	$row=$DB->getRow("select * from pre_roll where id='$id' limit 1");
 	if(!$row)
 		exit('{"code":-1,"msg":"当前轮询组不存在！"}');
@@ -468,7 +473,8 @@ case 'setRoll':
 	else exit('{"code":-1,"msg":"修改轮询组失败['.$DB->error().']"}');
 break;
 case 'delRoll':
-	$id=intval($_GET['id']);
+	if($_SERVER['REQUEST_METHOD'] !== 'POST') exit('{"code":405,"msg":"Method Not Allowed"}');
+	$id=intval($_POST['id']);
 	$row=$DB->getRow("select * from pre_roll where id='$id' limit 1");
 	if(!$row)
 		exit('{"code":-1,"msg":"当前轮询组不存在！"}');
@@ -629,7 +635,8 @@ case 'getWeixin':
 	exit(json_encode($result));
 break;
 case 'delWeixin':
-	$id=intval($_GET['id']);
+	if($_SERVER['REQUEST_METHOD'] !== 'POST') exit('{"code":405,"msg":"Method Not Allowed"}');
+	$id=intval($_POST['id']);
 	$row=$DB->getRow("select * from pre_weixin where id='$id' limit 1");
 	if(!$row)
 		exit('{"code":-1,"msg":"当前公众号/小程序不存在！"}');
@@ -697,8 +704,9 @@ case 'getWework':
 	exit(json_encode($result));
 break;
 case 'setWework':
-	$id=intval($_GET['id']);
-	$status=intval($_GET['status']);
+	if($_SERVER['REQUEST_METHOD'] !== 'POST') exit('{"code":405,"msg":"Method Not Allowed"}');
+	$id=intval($_POST['id']);
+	$status=intval($_POST['status']);
 	$row=$DB->getRow("select * from pre_wework where id='$id' limit 1");
 	if(!$row)
 		exit('{"code":-1,"msg":"当前企业微信不存在！"}');
@@ -707,7 +715,8 @@ case 'setWework':
 	else exit('{"code":-1,"msg":"修改企业微信失败['.$DB->error().']"}');
 break;
 case 'delWework':
-	$id=intval($_GET['id']);
+	if($_SERVER['REQUEST_METHOD'] !== 'POST') exit('{"code":405,"msg":"Method Not Allowed"}');
+	$id=intval($_POST['id']);
 	$row=$DB->getRow("select * from pre_wework where id='$id' limit 1");
 	if(!$row)
 		exit('{"code":-1,"msg":"当前企业微信不存在！"}');

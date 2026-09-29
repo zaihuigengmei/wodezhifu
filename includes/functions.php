@@ -116,6 +116,18 @@ function get_curl($url, $post=0, $referer=0, $cookie=0, $header=0, $ua=0, $nobao
 	curl_close($ch);
 	return $ret;
 }
+
+function epay_cookie_secure(){
+	return (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && strtolower($_SERVER['HTTP_X_FORWARDED_PROTO']) === 'https');
+}
+function epay_set_cookie($name, $value, $expires=0, $path='/', $httponly=true, $samesite='Lax'){
+	$options = ['expires'=>$expires, 'path'=>$path ?: '/', 'secure'=>epay_cookie_secure(), 'httponly'=>$httponly, 'samesite'=>$samesite ?: 'Lax'];
+	return setcookie($name, $value, $options);
+}
+function epay_delete_cookie($name, $path='/'){
+	return epay_set_cookie($name, '', time() - 2592000, $path ?: '/');
+}
+
 function real_ip($type=0){
 	$ip = $_SERVER['REMOTE_ADDR'];
 	if($type<=0 && isset($_SERVER['HTTP_X_FORWARDED_FOR']) && !empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {

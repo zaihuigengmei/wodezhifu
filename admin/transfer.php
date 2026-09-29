@@ -101,6 +101,7 @@ tbody tr>td:nth-child(5){max-width:300px;word-break: break-all;}
 <script src="../assets/js/bootstrap-table-page-jump-to.min.js"></script>
 <script src="../assets/js/custom.js"></script>
 <script>
+function escHtml(v){return $('<div>').text(v == null ? '' : String(v)).html();}
 $(document).ready(function(){
 	updateToolbar();
 	const defaultPageSize = 30;
@@ -121,7 +122,7 @@ $(document).ready(function(){
 				field: 'biz_no',
 				title: '交易号<br/>第三方交易号',
 				formatter: function(value, row, index) {
-					return '<b>'+value+'</b><br/>'+row.pay_order_no;
+					return '<b>'+escHtml(value)+'</b><br/>'+escHtml(row.pay_order_no);
 				}
 			},
 			{
@@ -145,14 +146,14 @@ $(document).ready(function(){
 					}else if(value == 'bank'){
 						typename='<img src="/assets/icon/bank.ico" width="16" onerror="this.style.display=\'none\'">银行卡';
 					}
-					return typename+(row.channel>0 ? '(<a href="./pay_channel.php?kw='+row.channel+'" target="_blank">'+row.channel+'</a>)'+'<br/>'+(row.desc?'<font color="#bf7fef">'+row.desc+'</font>':'')+'' : '');
+					return typename+(row.channel>0 ? '(<a href="./pay_channel.php?kw='+row.channel+'" target="_blank">'+row.channel+'</a>)'+'<br/>'+(row.desc?'<font color="#bf7fef">'+escHtml(row.desc)+'</font>':'')+'' : '');
 				}
 			},
 			{
 				field: 'account',
 				title: '付款账号<br/>姓名',
 				formatter: function(value, row, index) {
-					return ''+value+'<br/>'+row.username+'';
+					return escHtml(value)+'<br/>'+escHtml(row.username);
 				}
 			},
 			{
@@ -166,7 +167,7 @@ $(document).ready(function(){
 				field: 'paytime',
 				title: '提交时间<br/>付款时间',
 				formatter: function(value, row, index) {
-					return (row.addtime ? row.addtime : value)+'<br/>'+value;
+					return escHtml(row.addtime ? row.addtime : value)+'<br/>'+escHtml(value);
 				}
 			},
 			{

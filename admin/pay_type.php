@@ -170,8 +170,9 @@ function delItem(id) {
 	  btn: ['确定','取消'], icon:0
 	}, function(){
 	  $.ajax({
-		type : 'GET',
-		url : 'ajax_pay.php?act=delPayType&id='+id,
+		type : 'POST',
+		url : 'ajax_pay.php?act=delPayType',
+		data : {id:id},
 		dataType : 'json',
 		success : function(data) {
 			if(data.code == 0){
@@ -191,8 +192,9 @@ function delItem(id) {
 }
 function setStatus(id,status) {
 	$.ajax({
-		type : 'GET',
-		url : 'ajax_pay.php?act=setPayType&id='+id+'&status='+status,
+		type : 'POST',
+		url : 'ajax_pay.php?act=setPayType',
+		data : {id:id,status:status},
 		dataType : 'json',
 		success : function(data) {
 			if(data.code == 0){

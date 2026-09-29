@@ -370,7 +370,8 @@ case 'getGroup': //用户组
 	exit(json_encode($result));
 break;
 case 'delGroup':
-	$gid=intval($_GET['gid']);
+	if($_SERVER['REQUEST_METHOD'] !== 'POST') exit('{"code":405,"msg":"Method Not Allowed"}');
+	$gid=intval($_POST['gid']);
 	$row=$DB->getRow("select * from pre_group where gid='$gid' limit 1");
 	if(!$row)
 		exit('{"code":-1,"msg":"当前用户组不存在！"}');
@@ -549,7 +550,8 @@ case 'editUserChannelInfo':
 	}
 break;
 case 'delUser':
-	$uid=intval($_GET['uid']);
+	if($_SERVER['REQUEST_METHOD'] !== 'POST') exit('{"code":405,"msg":"Method Not Allowed"}');
+	$uid=intval($_POST['uid']);
 	if($DB->exec("DELETE FROM pre_user WHERE uid='$uid'")){
 		$DB->exec("DELETE FROM pre_subchannel WHERE uid='$uid'");
 		exit('{"code":0}');
@@ -687,8 +689,9 @@ case 'getSubChannel':
 	exit(json_encode($result));
 break;
 case 'setSubChannel':
-	$id=intval($_GET['id']);
-	$status=intval($_GET['status']);
+	if($_SERVER['REQUEST_METHOD'] !== 'POST') exit('{"code":405,"msg":"Method Not Allowed"}');
+	$id=intval($_POST['id']);
+	$status=intval($_POST['status']);
 	$row=$DB->getRow("SELECT * FROM pre_subchannel WHERE id='$id'");
 	if(!$row)
 		exit('{"code":-1,"msg":"当前子通道不存在！"}');
@@ -697,7 +700,8 @@ case 'setSubChannel':
 	else exit('{"code":-1,"msg":"修改子通道失败['.$DB->error().']"}');
 break;
 case 'delSubChannel':
-	$id=intval($_GET['id']);
+	if($_SERVER['REQUEST_METHOD'] !== 'POST') exit('{"code":405,"msg":"Method Not Allowed"}');
+	$id=intval($_POST['id']);
 	$row=$DB->getRow("SELECT * FROM pre_subchannel WHERE id='$id'");
 	if(!$row)
 		exit('{"code":-1,"msg":"当前子通道不存在！"}');
@@ -807,7 +811,8 @@ case 'batchdelBlack':
 break;
 
 case 'delRecord':
-	$id=intval($_GET['id']);
+	if($_SERVER['REQUEST_METHOD'] !== 'POST') exit('{"code":405,"msg":"Method Not Allowed"}');
+	$id=intval($_POST['id']);
 	if($DB->exec("DELETE FROM pre_record WHERE id='$id'")!==false)exit('{"code":0,"msg":"succ"}');
 	else exit('{"code":-1,"msg":"删除失败['.$DB->error().']"}');
 break;

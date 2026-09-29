@@ -142,14 +142,16 @@ case 'set':
 	else exit('{"code":-1,"msg":"修改设置失败['.$DB->error().']"}');
 break;
 case 'setGonggao':
-	$id=intval($_GET['id']);
-	$status=intval($_GET['status']);
+	if($_SERVER['REQUEST_METHOD'] !== 'POST') exit('{"code":405,"msg":"Method Not Allowed"}');
+	$id=intval($_POST['id']);
+	$status=intval($_POST['status']);
 	$sql = "UPDATE pre_anounce SET status='$status' WHERE id='$id'";
 	if($DB->exec($sql))exit('{"code":0,"msg":"修改状态成功！"}');
 	else exit('{"code":-1,"msg":"修改状态失败['.$DB->error().']"}');
 break;
 case 'delGonggao':
-	$id=intval($_GET['id']);
+	if($_SERVER['REQUEST_METHOD'] !== 'POST') exit('{"code":405,"msg":"Method Not Allowed"}');
+	$id=intval($_POST['id']);
 	$sql = "DELETE FROM pre_anounce WHERE id='$id'";
 	if($DB->exec($sql))exit('{"code":0,"msg":"删除公告成功！"}');
 	else exit('{"code":-1,"msg":"删除公告失败['.$DB->error().']"}');

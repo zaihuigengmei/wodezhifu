@@ -107,11 +107,11 @@ $(function(){
 				// 第一行：转账信息
 				$('#list').append(`
 					<tr>
-						<td><input type="checkbox" checked> ${item.index}</td>
-						<td>${item.account}</td>
-						<td>${item.name||''}</td>
-						<td>${item.money}</td>
-						<td>${item.remark||''}</td>
+						<td><input type="checkbox" checked> ${escHtml(item.index)}</td>
+						<td>${escHtml(item.account)}</td>
+						<td>${escHtml(item.name||'')}</td>
+						<td>${escHtml(item.money)}</td>
+						<td>${escHtml(item.remark||'')}</td>
 						<td style="text-align:center"><button class="btn btn-xs btn-primary submit-btn">提交转账</button></td>
 					</tr>
 					<tr>

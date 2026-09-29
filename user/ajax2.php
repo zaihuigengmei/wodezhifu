@@ -23,6 +23,17 @@ function user_safe_money($value, $name='金额'){
 	if($value !== '' && (!is_numeric($value) || !preg_match('/^[0-9]+(\.[0-9]{1,2})?$/', $value))) exit('{"code":-1,"msg":"'.$name.'不合法"}');
 	return $value;
 }
+function user_safe_like_text($value, $name='关键词'){
+	$value = trim((string)$value);
+	if($value === '' || strlen($value) > 192) exit('{"code":-1,"msg":"'.$name.'不合法"}');
+	return daddslashes($value);
+}
+function user_safe_search_type($value, $allowed){
+	$type = intval($value);
+	if(!in_array($type, $allowed, true)) exit('{"code":-1,"msg":"搜索类型不合法"}');
+	return $type;
+}
+
 function user_safe_url($value, $name='URL'){
 	$value = trim((string)$value);
 	if($value === '') return $value;
@@ -979,29 +990,32 @@ case 'orderList':
 			$sql.=" AND A.addtime<='{$endtime} 23:59:59'";
 		}
 	}
-	if(isset($_POST['kw']) && !empty($_POST['kw'])) {
-		$kw=daddslashes($_POST['kw']);
-		if($_POST['type']==1){
+	if(isset($_POST['kw']) && $_POST['kw'] !== '') {
+		$type = user_safe_search_type($_POST['type'], [1,2,3,4,5,6,7,8,9,10,11]);
+		if(in_array($type, [1,2,6,7,8,9,10,11], true)) $kw = user_safe_token($_POST['kw'], '搜索关键词');
+		elseif(in_array($type, [4,5], true)) $kw = user_safe_money($_POST['kw'], '搜索金额');
+		else $kw = user_safe_like_text($_POST['kw'], '商品名称');
+		if($type==1){
 			$sql.=" AND A.`trade_no`='{$kw}'";
-		}elseif($_POST['type']==2){
+		}elseif($type==2){
 			$sql.=" AND A.`out_trade_no`='{$kw}'";
-		}elseif($_POST['type']==3){
+		}elseif($type==3){
 			$sql.=" AND A.`name` like '%{$kw}%'";
-		}elseif($_POST['type']==4){
+		}elseif($type==4){
 			$sql.=" AND A.`money`='{$kw}'";
-		}elseif($_POST['type']==5){
+		}elseif($type==5){
 			$sql.=" AND A.`realmoney`='{$kw}'";
-		}elseif($_POST['type']==6){
+		}elseif($type==6){
 			$sql.=" AND A.`domain`='{$kw}'";
-		}elseif($_POST['type']==7){
+		}elseif($type==7){
 			$sql.=" AND A.`ip`='{$kw}'";
-		}elseif($_POST['type']==8){
+		}elseif($type==8){
 			$sql.=" AND A.`buyer`='{$kw}'";
-		}elseif($_POST['type']==9){
+		}elseif($type==9){
 			$sql.=" AND A.`api_trade_no`='{$kw}'";
-		}elseif($_POST['type']==10){
+		}elseif($type==10){
 			$sql.=" AND A.`bill_trade_no`='{$kw}'";
-		}elseif($_POST['type']==11){
+		}elseif($type==11){
 			$sql.=" AND A.`bill_mch_trade_no`='{$kw}'";
 		}
 	}
@@ -1047,29 +1061,21 @@ case 'statistics':
 			$sql.=" AND A.addtime<='{$endtime} 23:59:59'";
 		}
 	}
-	if(isset($_POST['kw']) && !empty($_POST['kw'])) {
-		$kw=daddslashes($_POST['kw']);
-		if($_POST['type']==1){
-			$sql.=" AND A.`trade_no`='{$kw}'";
-		}elseif($_POST['type']==2){
-			$sql.=" AND A.`out_trade_no`='{$kw}'";
-		}elseif($_POST['type']==3){
-			$sql.=" AND A.`name` like '%{$kw}%'";
-		}elseif($_POST['type']==4){
-			$sql.=" AND A.`money`='{$kw}'";
-		}elseif($_POST['type']==5){
-			$sql.=" AND A.`realmoney`='{$kw}'";
-		}elseif($_POST['type']==6){
-			$sql.=" AND A.`domain`='{$kw}'";
-		}elseif($_POST['type']==7){
-			$sql.=" AND A.`ip`='{$kw}'";
-		}elseif($_POST['type']==8){
-			$sql.=" AND A.`buyer`='{$kw}'";
-		}elseif($_POST['type']==9){
-			$sql.=" AND A.`api_trade_no`='{$kw}'";
-		}elseif($_POST['type']==10){
-			$sql.=" AND A.`bill_trade_no`='{$kw}'";
-		}
+	if(isset($_POST['kw']) && $_POST['kw'] !== '') {
+		$type = user_safe_search_type($_POST['type'], [1,2,3,4,5,6,7,8,9,10]);
+		if(in_array($type, [1,2,6,7,8,9,10], true)) $kw = user_safe_token($_POST['kw'], '搜索关键词');
+		elseif(in_array($type, [4,5], true)) $kw = user_safe_money($_POST['kw'], '搜索金额');
+		else $kw = user_safe_like_text($_POST['kw'], '商品名称');
+		if($type==1){ $sql.=" AND A.`trade_no`='{$kw}'"; }
+		elseif($type==2){ $sql.=" AND A.`out_trade_no`='{$kw}'"; }
+		elseif($type==3){ $sql.=" AND A.`name` like '%{$kw}%'"; }
+		elseif($type==4){ $sql.=" AND A.`money`='{$kw}'"; }
+		elseif($type==5){ $sql.=" AND A.`realmoney`='{$kw}'"; }
+		elseif($type==6){ $sql.=" AND A.`domain`='{$kw}'"; }
+		elseif($type==7){ $sql.=" AND A.`ip`='{$kw}'"; }
+		elseif($type==8){ $sql.=" AND A.`buyer`='{$kw}'"; }
+		elseif($type==9){ $sql.=" AND A.`api_trade_no`='{$kw}'"; }
+		elseif($type==10){ $sql.=" AND A.`bill_trade_no`='{$kw}'"; }
 	}
     // 统计数据
     $resultMoneyData = $DB->getRow("SELECT 
@@ -1106,15 +1112,11 @@ break;
 
 case 'recordList':
 	$sql=" uid=$uid";
-	if(isset($_POST['kw']) && !empty($_POST['kw'])) {
-		$kw=daddslashes($_POST['kw']);
-		if($_POST['type']==1){
-			$sql.=" AND `type`='{$kw}'";
-		}elseif($_POST['type']==2){
-			$sql.=" AND `money`='{$kw}'";
-		}elseif($_POST['type']==3){
-			$sql.=" AND `trade_no`='{$kw}'";
-		}
+	if(isset($_POST['kw']) && $_POST['kw'] !== '') {
+		$type = user_safe_search_type($_POST['type'], [1,2,3]);
+		if($type==1){ $kw = user_safe_like_text($_POST['kw'], '记录类型'); $sql.=" AND `type`='{$kw}'"; }
+		elseif($type==2){ $kw = user_safe_money($_POST['kw'], '变更金额'); $sql.=" AND `money`='{$kw}'"; }
+		elseif($type==3){ $kw = user_safe_token($_POST['kw'], '关联订单号'); $sql.=" AND `trade_no`='{$kw}'"; }
 	}
 	$offset = intval($_POST['offset']);
 	$limit = intval($_POST['limit']);
@@ -1157,21 +1159,17 @@ case 'transferList':
 		$dstatus = intval($_POST['dstatus']);
 		$sql.=" AND `status`='{$dstatus}'";
 	}
-	if(isset($_POST['kw']) && !empty($_POST['kw'])) {
-		$kw=daddslashes($_POST['kw']);
-		if($_POST['type']==1){
-			$sql.=" AND `biz_no`='{$kw}'";
-		}elseif($_POST['type']==2){
-			$sql.=" AND `out_biz_no`='{$kw}'";
-		}elseif($_POST['type']==3){
-			$sql.=" AND `pay_order_no`='{$kw}'";
-		}elseif($_POST['type']==4){
-			$sql.=" AND `account`='{$kw}'";
-		}elseif($_POST['type']==5){
-			$sql.=" AND `username` LIKE '%{$kw}%'";
-		}elseif($_POST['type']==6){
-			$sql.=" AND `money`='{$kw}'";
-		}
+	if(isset($_POST['kw']) && $_POST['kw'] !== '') {
+		$type = user_safe_search_type($_POST['type'], [1,2,3,4,5,6]);
+		if(in_array($type, [1,2,3,4], true)) $kw = user_safe_token($_POST['kw'], '搜索关键词');
+		elseif($type==6) $kw = user_safe_money($_POST['kw'], '付款金额');
+		else $kw = user_safe_like_text($_POST['kw'], '付款姓名');
+		if($type==1){ $sql.=" AND `biz_no`='{$kw}'"; }
+		elseif($type==2){ $sql.=" AND `out_biz_no`='{$kw}'"; }
+		elseif($type==3){ $sql.=" AND `pay_order_no`='{$kw}'"; }
+		elseif($type==4){ $sql.=" AND `account`='{$kw}'"; }
+		elseif($type==5){ $sql.=" AND `username` LIKE '%{$kw}%'"; }
+		elseif($type==6){ $sql.=" AND `money`='{$kw}'"; }
 	}
 	if(!empty($_POST['starttime']) || !empty($_POST['endtime'])){
 		if(!empty($_POST['starttime'])){
@@ -1224,21 +1222,17 @@ case 'transfer_statistics':
 			$sql.=" AND addtime<='{$endtime} 23:59:59'";
 		}
 	}
-	if(isset($_POST['kw']) && !empty($_POST['kw'])) {
-		$kw=daddslashes($_POST['kw']);
-		if($_POST['type']==1){
-			$sql.=" AND `biz_no`='{$kw}'";
-		}elseif($_POST['type']==2){
-			$sql.=" AND `out_biz_no`='{$kw}'";
-		}elseif($_POST['type']==3){
-			$sql.=" AND `pay_order_no`='{$kw}'";
-		}elseif($_POST['type']==4){
-			$sql.=" AND `account`='{$kw}'";
-		}elseif($_POST['type']==5){
-			$sql.=" AND `username`='{$kw}'";
-		}elseif($_POST['type']==6){
-			$sql.=" AND `money`='{$kw}'";
-		}
+	if(isset($_POST['kw']) && $_POST['kw'] !== '') {
+		$type = user_safe_search_type($_POST['type'], [1,2,3,4,5,6]);
+		if(in_array($type, [1,2,3,4], true)) $kw = user_safe_token($_POST['kw'], '搜索关键词');
+		elseif($type==6) $kw = user_safe_money($_POST['kw'], '付款金额');
+		else $kw = user_safe_like_text($_POST['kw'], '付款姓名');
+		if($type==1){ $sql.=" AND `biz_no`='{$kw}'"; }
+		elseif($type==2){ $sql.=" AND `out_biz_no`='{$kw}'"; }
+		elseif($type==3){ $sql.=" AND `pay_order_no`='{$kw}'"; }
+		elseif($type==4){ $sql.=" AND `account`='{$kw}'"; }
+		elseif($type==5){ $sql.=" AND `username` LIKE '%{$kw}%'"; }
+		elseif($type==6){ $sql.=" AND `money`='{$kw}'"; }
 	}
 	$totalMoney = $DB->getColumn("SELECT SUM(money) FROM pre_transfer WHERE{$sql} AND status<>2");
 	$resultCount = $DB->getRow("SELECT 

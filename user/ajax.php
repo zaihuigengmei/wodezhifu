@@ -102,7 +102,7 @@ case 'login':
 		$expiretime=time()+604800;
 		$token=authcode("{$uid}\t{$session}\t{$expiretime}", 'ENCODE', SYS_KEY);
 		ob_clean();
-		setcookie("user_token", $token, time() + 2592000);
+		epay_set_cookie("user_token", $token, time() + 2592000, "/user");
 		$DB->exec("update `pre_user` set `lasttime`=NOW() where `uid`='$uid'");
 		if(empty($userrow['account']) || empty($userrow['username'])){
 			$result=array("code"=>0,"user_token"=>$token,"msg"=>"登录成功！正在跳转到收款账号设置","url"=>"./editinfo.php?start=1");
@@ -144,7 +144,7 @@ case 'wxalogin':
 		$session=md5($uid.$key.$password_hash);
 		$expiretime=time()+2592000;
 		$token=authcode("{$uid}\t{$session}\t{$expiretime}", 'ENCODE', SYS_KEY);
-		setcookie("user_token", $token, time() + 2592000);
+		epay_set_cookie("user_token", $token, time() + 2592000, "/user");
 		$DB->exec("update `pre_user` set `lasttime`=NOW() where `uid`='$uid'");
 		$result=array("code"=>0,"user_token"=>$token,"msg"=>"登录成功！");
 		exit(json_encode($result));

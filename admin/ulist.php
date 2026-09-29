@@ -468,8 +468,9 @@ function delUser(uid) {
 	}, function(){
 	  var ii = layer.load(2, {shade:[0.1,'#fff']});
 	  $.ajax({
-		type : 'GET',
-		url : 'ajax_user.php?act=delUser&uid='+uid,
+		type : 'POST',
+		url : 'ajax_user.php?act=delUser',
+		data : {uid:uid},
 		dataType : 'json',
 		success : function(data) {
 			layer.close(ii);

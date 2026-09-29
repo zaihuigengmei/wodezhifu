@@ -151,8 +151,9 @@ function delItem(id) {
 	}, function(){
 		var ii = layer.load(2, {shade:[0.1,'#fff']});
 	  $.ajax({
-		type : 'GET',
-		url : 'ajax_pay.php?act=delWework&id='+id,
+		type : 'POST',
+		url : 'ajax_pay.php?act=delWework',
+		data : {id:id},
 		dataType : 'json',
 		success : function(data) {
 			layer.close(ii);
@@ -173,8 +174,9 @@ function delItem(id) {
 }
 function setStatus(id,status) {
 	$.ajax({
-		type : 'GET',
-		url : 'ajax_pay.php?act=setWework&id='+id+'&status='+status,
+		type : 'POST',
+		url : 'ajax_pay.php?act=setWework',
+		data : {id:id,status:status},
 		dataType : 'json',
 		success : function(data) {
 			if(data.code == 0){

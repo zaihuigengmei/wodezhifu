@@ -103,9 +103,12 @@ class PayClient
     
     //商户私钥签名
     private function rsaPrivateSign($data){
-        $key = "-----BEGIN RSA PRIVATE KEY-----\n" .
-            wordwrap($this->private_key, 64, "\n", true) .
-            "\n-----END RSA PRIVATE KEY-----";
+        $key = "-----BEGIN PRIVATE KEY-----
+" .
+            wordwrap($this->private_key, 64, "
+", true) .
+            "
+-----END PRIVATE KEY-----";
         $privatekey = openssl_get_privatekey($key);
         if(!$privatekey){
             throw new Exception('签名失败，商户私钥错误');

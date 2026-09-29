@@ -146,8 +146,9 @@ function delItem(id) {
 	  btn: ['确定','取消'], icon:0
 	}, function(){
 	  $.ajax({
-		type : 'GET',
-		url : 'ajax_user.php?act=delRecord&id='+id,
+		type : 'POST',
+		url : 'ajax_user.php?act=delRecord',
+		data : {id:id},
 		dataType : 'json',
 		success : function(data) {
 			if(data.code == 0){
