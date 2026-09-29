@@ -147,6 +147,20 @@ class qqpay_plugin
 		return ['type'=>'app','data'=>$result];
 	}
 
+	// Validate authenticated gateway amounts as integer cents, never rounded input.
+	static private function paidResultMatches($data, $order, $channel){
+		if(!is_array($data) || ($data['out_trade_no'] ?? null) !== TRADE_NO) return false;
+		$paid = $data['total_fee'] ?? null;
+		$money = $order['realmoney'] ?? null;
+		if((!is_int($paid) && !is_string($paid)) || !preg_match('/\A[0-9]{1,14}\z/', (string)$paid)) return false;
+		if(!is_scalar($money) || !preg_match('/\A([0-9]{1,12})(?:\.([0-9]{1,2}))?\z/', (string)$money, $m)) return false;
+		$expected = ltrim($m[1].str_pad($m[2] ?? '', 2, '0'), '0');
+		if(ltrim((string)$paid, '0') !== $expected) return false;
+		if(isset($data['mch_id']) && $data['mch_id'] !== (string)$channel['appid']) return false;
+		if(isset($data['fee_type']) && $data['fee_type'] !== 'CNY') return false;
+		return true;
+	}
+
 	//付款码支付
 	static public function scanpay(){
 		global $channel, $order, $ordername, $conf, $clientip;
@@ -165,9 +179,10 @@ class qqpay_plugin
 		try{
 			$client = new \QQPay\PaymentService($qqpay_config);
 			$result = $client->microPay($params);
-			if($result['trade_state'] == 'SUCCESS'){
+			if($result['trade_state'] === 'SUCCESS'){
+				if(!self::paidResultMatches($result, $order, $channel)) return ['type'=>'error','msg'=>'QQ钱包支付结果与订单不匹配'];
 				return ['type'=>'scan','data'=>['type'=>$order['typename'], 'trade_no'=>$result['out_trade_no'], 'api_trade_no'=>$result['transaction_id'], 'buyer'=>$result['openid'], 'money'=>strval(round($result['total_fee']/100, 2))]];
-			}elseif($result['trade_state'] == 'USERPAYING'){
+			}elseif($result['trade_state'] === 'USERPAYING'){
 				sleep(2);
 				$retry = 0;
 				$success = false;
@@ -178,15 +193,16 @@ class qqpay_plugin
 					}catch(Exception $e){
 						return ['type'=>'error','msg'=>'QQ钱包支付失败！订单查询失败:'.$e->getMessage()];
 					}
-					if($result['trade_state'] == 'SUCCESS'){
+					if($result['trade_state'] === 'SUCCESS'){
 						$success = true;
 						break;
-					}elseif($result['trade_state'] != 'USERPAYING'){
+					}elseif($result['trade_state'] !== 'USERPAYING'){
 						return ['type'=>'error','msg'=>'QQ钱包支付失败！'.$result['trade_state_desc']];
 					}
 					$retry++;
 				}
 				if($success){
+					if(!self::paidResultMatches($result, $order, $channel)) return ['type'=>'error','msg'=>'QQ钱包支付结果与订单不匹配'];
 					processNotify($order, $result['transaction_id'], $result['openid']);
 					return ['type'=>'scan','data'=>['type'=>$order['typename'], 'trade_no'=>$result['out_trade_no'], 'api_trade_no'=>$result['transaction_id'], 'buyer'=>$result['openid'], 'money'=>strval(round($result['total_fee']/100, 2))]];
 				}else{
@@ -209,12 +225,21 @@ class qqpay_plugin
 		global $channel, $order;
 
 		$isSuccess = true;
+		$errmsg = '';
 		$qqpay_config = require(PAY_ROOT.'inc/config.php');
 		try{
 			$client = new \QQPay\PaymentService($qqpay_config);
 			$data = $client->notify();
-			if($data['out_trade_no'] == TRADE_NO && $data['total_fee']==strval($order['realmoney']*100)){
+			// SDK notify accepts REFUND as completed; require a fresh final paid result.
+			$paid = $client->orderQuery($data['transaction_id']);
+			if(($paid['trade_state'] ?? null) === 'SUCCESS'
+				&& ($paid['transaction_id'] ?? null) === ($data['transaction_id'] ?? null)
+				&& self::paidResultMatches($paid, $order, $channel)
+				&& self::paidResultMatches($data, $order, $channel)){
 				processNotify($order, $data['transaction_id'], $data['openid']);
+			}else{
+				$isSuccess = false;
+				$errmsg = 'Payment result mismatch';
 			}
 		}catch(Exception $e){
 			$isSuccess = false;

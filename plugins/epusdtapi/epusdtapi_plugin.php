@@ -113,7 +113,7 @@ class epusdtapi_plugin
     {
         global $channel, $order;
 
-        ob_clean();
+        if (ob_get_level() > 0) ob_clean();
         header('Content-Type: text/plain; charset=utf-8');
 
         $data = self::readCallbackData();
@@ -127,18 +127,49 @@ class epusdtapi_plugin
         $outTradeNo = (string)($data['order_id'] ?? '');
         $tradeNo = (string)($data['trade_id'] ?? '');
         $money = $data['amount'] ?? 0;
-        $status = (int)($data['status'] ?? 0);
+        $status = $data['status'] ?? null;
         $buyer = (string)($data['block_transaction_id'] ?? ($data['receive_address'] ?? ''));
-        $pid = isset($data['pid']) ? trim((string)$data['pid']) : trim((string)$channel['appid']);
+        $pid = isset($data['pid']) ? (string)$data['pid'] : '';
         $currency = isset($data['currency']) ? strtolower(trim((string)$data['currency'])) : '';
         $needCurrency = strtolower(trim((string)($channel['fiat'] ?: 'cny')));
 
-        if ($status === 2 && $outTradeNo === TRADE_NO && $pid === trim((string)$channel['appid']) && $currency === $needCurrency && round((float)$money, 2) === round((float)$order['realmoney'], 2)) {
+        [$token, $network] = self::parseTradeType((string)$order['typename']);
+        // Upstream OrderNotifyResponse has token but no currency/network.
+        // Validate optional extensions when present; do not require invented fields.
+        if (($status === 2 || $status === '2') && $outTradeNo === TRADE_NO && $tradeNo !== ''
+            && $pid === trim((string)$channel['appid'])
+            && strtolower((string)($data['token'] ?? '')) === $token
+            && (!array_key_exists('currency', $data) || $currency === $needCurrency)
+            && (!array_key_exists('network', $data) || strtolower((string)$data['network']) === $network)
+            && self::moneyMatch($money, $order['realmoney'])) {
             processNotify($order, $tradeNo, $buyer);
             exit('ok');
         }
 
         exit('fail - status error');
+    }
+
+    // Fiat order amounts: compare exact decimal values, never round underpayments up.
+    private static function moneyMatch($paid, $expected): bool
+    {
+        $normalize = static function ($value) {
+            if (!is_string($value) && !is_int($value) && !is_float($value)) return null;
+            $value = (string)$value;
+            if (!preg_match('/\A[0-9]+(?:\.[0-9]+)?\z/', $value)) return null;
+            $parts = explode('.', $value, 2);
+            return (ltrim($parts[0], '0') ?: '0') . '.' . rtrim($parts[1] ?? '', '0');
+        };
+        $left = $normalize($paid);
+        return $left !== null && $left !== '0.' && $left === $normalize($expected);
+    }
+
+    private static function validScalars(array $data): bool
+    {
+        foreach ($data as $value) {
+            if ($value !== null && !is_string($value) && !is_int($value) && !is_float($value)) return false;
+            if (is_float($value) && !is_finite($value)) return false;
+        }
+        return true;
     }
 
     public static function return(): array
@@ -183,7 +214,9 @@ class epusdtapi_plugin
 
     private static function verify(array $parameter, string $secretKey): bool
     {
-        if (empty($parameter['signature'])) {
+        if (!self::validScalars($parameter) || !isset($parameter['signature'])
+            || !is_string($parameter['signature'])
+            || !preg_match('/\A[0-9a-f]{64}\z/', $parameter['signature'])) {
             return false;
         }
         return hash_equals(self::sign($parameter, $secretKey), (string)$parameter['signature']);

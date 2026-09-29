@@ -451,6 +451,41 @@ class wxpayn_plugin
 		return ['type'=>'page','page'=>'return'];
 	}
 
+	// Validate every authenticated combine detail before any suborder mutation.
+	static private function combineResultMatches($data, $order, $channel){
+		if(($data['combine_out_trade_no'] ?? null) !== TRADE_NO
+			|| ($data['combine_mchid'] ?? null) !== (string)$channel['appmchid']
+			|| !is_array($data['sub_orders'] ?? null) || !$data['sub_orders']) return false;
+		$toCents = static function($money){
+			if(!is_scalar($money) || !preg_match('/\A([0-9]{1,12})(?:\.([0-9]{1,2}))?\z/', (string)$money, $m)) return null;
+			return (int)($m[1].str_pad($m[2] ?? '', 2, '0'));
+		};
+		$expected = $toCents($order['realmoney'] ?? null);
+		if($expected === null || $expected <= 0) return false;
+		$stored = \lib\Payment::getSubOrders(TRADE_NO);
+		if(!is_array($stored) || count($stored) !== count($data['sub_orders'])) return false;
+		$pending = [];
+		foreach($stored as $row){
+			$id = $row['sub_trade_no'] ?? null;
+			if(!is_string($id) || $id === '' || isset($pending[$id])) return false;
+			$pending[$id] = $toCents($row['money'] ?? null);
+			if($pending[$id] === null) return false;
+		}
+		$total = 0;
+		foreach($data['sub_orders'] as $detail){
+			if(!is_array($detail) || ($detail['trade_state'] ?? null) !== 'SUCCESS'
+				|| ($detail['mchid'] ?? null) !== (string)$channel['appmchid']
+				|| ($detail['amount']['currency'] ?? null) !== 'CNY') return false;
+			$id = $detail['out_trade_no'] ?? null;
+			$paid = $detail['amount']['total_amount'] ?? null;
+			if(!is_string($id) || !isset($pending[$id]) || !is_int($paid) || $paid <= 0 || $paid !== $pending[$id]
+				|| !is_string($detail['transaction_id'] ?? null) || $detail['transaction_id'] === '') return false;
+			unset($pending[$id]);
+			$total += $paid;
+		}
+		return !$pending && $total === $expected;
+	}
+
 	//异步回调
 	static public function notify(){
 		global $channel, $order;
@@ -465,14 +500,14 @@ class wxpayn_plugin
 		}
 
 		if(isset($data['combine_out_trade_no'])){ //合单支付
-			if($data['combine_out_trade_no'] == TRADE_NO && array_sum(array_map(function($d){ return (int)($d['amount']['total_amount'] ?? 0); }, $data['sub_orders'])) === (int)round($order['realmoney']*100)){
+			if(self::combineResultMatches($data, $order, $channel)){
 				$sub_orders = [];
 				foreach($data['sub_orders'] as $detail){
 					$sub_orders[] = ['sub_trade_no'=>$detail['out_trade_no'], 'api_trade_no'=>$detail['transaction_id'], 'money'=>round($detail['amount']['total_amount']/100,2)];
 				}
 				\lib\Payment::processSubOrders(TRADE_NO, $sub_orders);
 
-				processNotify($order, $data['combine_out_trade_no'], $data['combine_payer_info']['openid']);
+				processNotify($order, $data['combine_out_trade_no'], $data['combine_payer_info']['openid'] ?? null);
 			}
 		}else{
 			if ($data['trade_state'] == 'SUCCESS') {

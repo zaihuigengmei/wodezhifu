@@ -124,7 +124,7 @@ class PayService
 			throw new Exception('验签失败，富友公钥不正确');
 		}
 		$result = openssl_verify($data, base64_decode($signature), $pubkeyid, OPENSSL_ALGO_MD5);
-		return $result;
+		return $result === 1;
 	}
 
 	private function toXml($data, $eIsArray=FALSE) {

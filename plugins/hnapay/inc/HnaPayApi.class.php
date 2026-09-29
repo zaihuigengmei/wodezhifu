@@ -187,6 +187,19 @@ class HnaPayApi
         }
     }
 
+    // EXP08 response signature order: protocol section 5.5.2.1.
+    public function verifiedOrderQuery($trade_no){
+        $arr = $this->jsapiQuery($trade_no);
+        $sign_order = ['version', 'tranCode', 'merOrderId', 'merId', 'charset', 'signType', 'resultCode', 'errorCode', 'hnapayOrderId', 'tranAmt', 'refundAmt', 'orderStatus'];
+        foreach($sign_order as $key){
+            if(!isset($arr[$key]) || !is_string($arr[$key])) throw new Exception('查询返回字段不合法');
+        }
+        if(!is_string($arr['signValue'] ?? null) || !$this->verifySign($arr, $sign_order, $arr['signValue'])) throw new Exception('查询返回验签失败');
+        if($arr['version'] !== '2.0' || $arr['tranCode'] !== 'EXP08' || $arr['merId'] !== (string)$this->mer_id
+            || $arr['merOrderId'] !== $trade_no || $arr['charset'] !== $this->charset || $arr['signType'] !== $this->sign_type) throw new Exception('查询返回身份不匹配');
+        return $arr;
+    }
+
     //JSAPI回调验签
     public function jsapiVerify($param){
         if(!$param['signValue']) return false;

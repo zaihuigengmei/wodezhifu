@@ -110,29 +110,57 @@ class bepusdt_plugin
     {
         global $channel, $order;
 
-        ob_clean();
-        header('Content-Type: plain/text; charset=utf-8');
+        if (ob_get_level() > 0) ob_clean();
+        header('Content-Type: text/plain; charset=utf-8');
 
         $data = json_decode(file_get_contents('php://input'), true);
+        if (!is_array($data) || !self::validScalars($data)) exit('fail - data error');
         $sign = $data['signature'] ?? '';
-        if ($sign != self::_toSign($data, $channel['appkey'])) {
+        if (!is_string($sign) || !preg_match('/\A[0-9a-f]{32}\z/', $sign)
+            || !hash_equals(self::_toSign($data, $channel['appkey']), $sign)) {
             // 签名验证失败
 
             exit('fail - sign error');
         }
 
-        $out_trade_no = $data['order_id'];    // 商户订单号
-        $trade_no     = $data['trade_id'];    // BEpusdt 交易ID
-        $buyer        = mb_substr($data['buyer'], -28);
-        $paid_amount = isset($data['amount']) ? round((float)$data['amount'], 2) : null;
-        $need_amount = round((float)$order['realmoney'], 2);
-        if ($data['status'] === 2 && $out_trade_no == TRADE_NO && $paid_amount !== null && $paid_amount == $need_amount) {
+        $out_trade_no = $data['order_id'] ?? '';
+        $trade_no = $data['trade_id'] ?? '';
+        // Upstream EpNotify does not include buyer; retain it only when supplied.
+        $buyer = mb_substr((string)($data['buyer'] ?? ''), -28);
+        if (($data['status'] ?? null) === 2 && $out_trade_no === TRADE_NO
+            && is_string($trade_no) && $trade_no !== ''
+            && self::moneyMatch($data['amount'] ?? null, $order['realmoney'])
+            && (!array_key_exists('fiat', $data) || $data['fiat'] === ($channel['fiat'] ?: 'CNY'))
+            && (!array_key_exists('trade_type', $data) || $data['trade_type'] === $order['typename'])) {
             processNotify($order, $trade_no, $buyer);
 
             exit('ok');
         }
 
         exit('fail - status error');
+    }
+
+    // Fiat order amounts: compare exact decimal values, never round underpayments up.
+    private static function moneyMatch($paid, $expected): bool
+    {
+        $normalize = static function ($value) {
+            if (!is_string($value) && !is_int($value) && !is_float($value)) return null;
+            $value = (string)$value;
+            if (!preg_match('/\A[0-9]+(?:\.[0-9]+)?\z/', $value)) return null;
+            $parts = explode('.', $value, 2);
+            return (ltrim($parts[0], '0') ?: '0') . '.' . rtrim($parts[1] ?? '', '0');
+        };
+        $left = $normalize($paid);
+        return $left !== null && $left !== '0.' && $left === $normalize($expected);
+    }
+
+    private static function validScalars(array $data): bool
+    {
+        foreach ($data as $value) {
+            if ($value !== null && !is_string($value) && !is_int($value) && !is_float($value)) return false;
+            if (is_float($value) && !is_finite($value)) return false;
+        }
+        return true;
     }
 
     public static function return(): array

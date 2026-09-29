@@ -149,12 +149,23 @@ Content-Transfer-Encoding: base64"."\n\n\n".$encryptoData;
 
         $unSignDataPath = $this->temp_path . 'unSignData_' . $salt . '.txt';
 
-        $flag = openssl_pkcs7_verify($respsignedDataPath,PKCS7_NOVERIFY,$unSignDataPath);
+        // Do not trust a signer certificate supplied inside the message.
+        // NOINTERN restricts signature verification to the configured platform cert.
+        $platformCertPath = $this->temp_path . 'platform_' . bin2hex(random_bytes(16)) . '.pem';
+        if (file_put_contents($platformCertPath, $this->kuaiqianCert) === false) {
+            @unlink($respsignedDataPath);
+            throw new Exception('平台验签证书写入失败');
+        }
+        try {
+            $flag = openssl_pkcs7_verify($respsignedDataPath, PKCS7_NOVERIFY | PKCS7_NOINTERN,
+                $unSignDataPath, [], $platformCertPath);
+        } finally {
+            @unlink($respsignedDataPath);
+            @unlink($unSignDataPath);
+            @unlink($platformCertPath);
+        }
 
-        unlink($respsignedDataPath);
-        unlink($unSignDataPath);
-
-        return $flag == 1;
+        return $flag === true;
     }
 
     /**

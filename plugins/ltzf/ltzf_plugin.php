@@ -169,14 +169,26 @@ class ltzf_plugin
 
 		$arr = $_POST;
 		$sign_param = ['code','timestamp','mch_id','order_no','out_trade_no','pay_no','total_fee'];
+		foreach($sign_param as $field){
+			if(!isset($arr[$field]) || !is_string($arr[$field]) || $arr[$field] === '') return ['type'=>'html','data'=>'FAIL'];
+		}
+		if(!is_string($arr['sign'] ?? null)) return ['type'=>'html','data'=>'FAIL'];
 		$sign = self::make_sign($arr, $sign_param, $channel['appkey']);
 
 		if($sign===$arr["sign"]){
-			if($arr['code'] == '0'){
+			if($arr['code'] === '0'){
 				$out_trade_no = $arr['out_trade_no'];
 				$trade_no = $arr['order_no'];
 
-				if ($out_trade_no == TRADE_NO && epay_callback_cent_match(($arr['total_fee'] ?? null), $order['realmoney'])) {
+				// LTZF total_fee is yuan (official notification example: 0.01), not cents.
+				$normalize = static function($value){
+					if(!is_string($value) && !is_int($value)) return null;
+					if(!preg_match('/\A[0-9]{1,16}(?:\.[0-9]{1,16})?\z/', (string)$value)) return null;
+					$parts = explode('.', (string)$value, 2);
+					return (ltrim($parts[0], '0') ?: '0').'.'.rtrim($parts[1] ?? '', '0');
+				};
+				$paid = $normalize($arr['total_fee']);
+				if ($out_trade_no === (string)TRADE_NO && $arr['mch_id'] === (string)$channel['appid'] && $paid !== null && $paid === $normalize((string)$order['realmoney'])) {
 					processNotify($order, $trade_no, $arr['openid']);
 				}
 				return ['type'=>'html','data'=>'SUCCESS'];

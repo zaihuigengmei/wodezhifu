@@ -519,6 +519,15 @@ class kuaiqian_plugin
 		}
 	}
 
+	// Exact integer cents; do not truncate fractional/scientific input.
+	static private function paidCentMatches($paid, $money){
+		if ((!is_string($paid) && !is_int($paid)) || !preg_match('/^[0-9]+$/D', (string)$paid)
+			|| (!is_string($money) && !is_int($money) && !is_float($money))
+			|| !preg_match('/^([0-9]+)(?:\.([0-9]{1,2})0*)?$/D', (string)$money, $m)) return false;
+		$need = ltrim($m[1].str_pad($m[2] ?? '', 2, '0'), '0');
+		return $need !== '' && ltrim((string)$paid, '0') === $need;
+	}
+
 	//当面付异步回调
 	static public function notifys(){
 		global $channel, $order;
@@ -532,12 +541,31 @@ class kuaiqian_plugin
 			return ['type'=>'html','data'=>$ex->getMessage()];
 		}
 
-		if($result['body']['orderStatus'] == 'S'){
-			$pay_amount = isset($result['body']['amount']) ? intval($result['body']['amount']) : 0;
-			$need_amount = intval(round($order['realmoney'] * 100));
-			if($result['head']['externalRefNumber'] == TRADE_NO && $pay_amount === $need_amount){
-				processNotify($order, $result['body']['idOrderCtrl'], $result['body']['thirdPartyBuyerId']);
+		// The outer callback head is not signed. Query the LOCAL order number,
+		// never a callback-supplied idOrderCtrl (which could select another order).
+		if (($result['body']['orderStatus'] ?? null) === 'S') {
+			$head = ['version'=>'1.0.0', 'messageType'=>'A7006',
+				'memberCode'=>$channel['appid'], 'externalRefNumber'=>TRADE_NO];
+			if (!empty($channel['appmchid'])) {
+				$head['memberCode'] = $channel['appmchid'];
+				$head['vendorMemberCode'] = $channel['appid'];
 			}
+			try {
+				$paid = $client->execute($head, ['merchantId'=>$channel['merchant_id'],
+					'terminalId'=>$channel['terminal_id']]);
+			} catch (\Throwable $ex) {
+				return ['type'=>'html', 'data'=>'ERROR'];
+			}
+			if (!is_array($paid) || ($paid['bizResponseCode'] ?? null) !== '0000'
+				|| ($paid['txnStatus'] ?? null) !== 'S' || ($paid['txnType'] ?? null) !== '20200'
+				|| ($paid['merchantId'] ?? null) !== (string)$channel['merchant_id']
+				|| ($paid['terminalId'] ?? null) !== (string)$channel['terminal_id']
+				|| !is_string($paid['idOrderCtrl'] ?? null) || $paid['idOrderCtrl'] === ''
+				|| $paid['idOrderCtrl'] !== ($result['body']['idOrderCtrl'] ?? null)
+				|| !self::paidCentMatches($paid['amount'] ?? null, $order['realmoney'])) {
+				return ['type'=>'html', 'data'=>'ERROR'];
+			}
+			processNotify($order, $paid['idOrderCtrl'], $paid['thirdPartyBuyerId'] ?? null);
 		}
 
 		return ['type'=>'html','data'=>$response];

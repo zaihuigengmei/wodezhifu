@@ -472,6 +472,16 @@ class hnapay_plugin
 	    exit;
 	}
 
+	static private function h5MoneyMatch($paid, $expected){
+		$normalize = static function($value){
+			if(!is_string($value) && !is_int($value) && !is_float($value)) return null;
+			if(!preg_match('/^([0-9]{1,12})(?:\.([0-9]{1,2}))?$/D', (string)$value, $m)) return null;
+			return ltrim($m[1], '0').'.'.str_pad($m[2] ?? '', 2, '0');
+		};
+		$a = $normalize($paid);
+		return $a !== null && $a === $normalize($expected);
+	}
+
 	//异步回调
 	static public function notify(){
 		global $channel, $order;
@@ -483,8 +493,22 @@ class hnapay_plugin
 
 		$pay = new HnaPayApi($channel['appid'], $channel['appkey'], $channel['appsecret']);
 
-		if($_POST['tranCode'] == 'MUP11'){
-			$verify_result = $pay->alipayh5Verify($_POST);
+		if(($_POST['tranCode'] ?? null) === 'MUP11'){
+			// MUP11 does not sign tranAmt. Use the authenticated EXP08 amount.
+			try{
+				if(!$pay->alipayh5Verify($_POST) || ($_POST['merId'] ?? null) !== (string)$channel['appid']
+					|| ($_POST['merOrderId'] ?? null) !== TRADE_NO) return ['type'=>'html','data'=>'sign_error'];
+				if(($_POST['resultCode'] ?? null) !== '0000') return ['type'=>'html','data'=>'200'];
+				$result = $pay->verifiedOrderQuery(TRADE_NO);
+				if($result['resultCode'] !== '0000' || $result['orderStatus'] !== '1'
+					|| $result['hnapayOrderId'] === '' || $result['hnapayOrderId'] !== ($_POST['hnapayOrderId'] ?? null)
+					|| !self::h5MoneyMatch($result['tranAmt'], $order['realmoney'])) return ['type'=>'html','data'=>'order_error'];
+				// Other query extension fields are not covered by the EXP08 signature.
+				processNotify($order, $result['hnapayOrderId']);
+				return ['type'=>'html','data'=>'200'];
+			}catch(Exception $e){
+				return ['type'=>'html','data'=>'query_error'];
+			}
 		}elseif($_POST['tranCode'] == 'EXP13'){
 			$verify_result = $pay->quickpayVerify($_POST);
 		}else{

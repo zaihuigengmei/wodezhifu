@@ -958,6 +958,16 @@ class alipayd_plugin
 		return $bizContent;
 	}
 
+	static private function combineMoneyMatch($paid, $expected){
+		$normalize = static function($value){
+			if(!is_string($value) && !is_int($value) && !is_float($value)) return null;
+			if(!preg_match('/^([0-9]{1,12})(?:\.([0-9]{1,2}))?$/D', (string)$value, $m)) return null;
+			return ltrim($m[1], '0').'.'.str_pad($m[2] ?? '', 2, '0');
+		};
+		$a = $normalize($paid);
+		return $a !== null && $a === $normalize($expected);
+	}
+
 	static private function combine_notify(){
 		global $channel, $order, $conf;
 
@@ -969,14 +979,35 @@ class alipayd_plugin
 		if($verify_result) {
 			$out_trade_no = $_POST['out_merge_no'];
 			$buyer_id = $_POST['buyer_id'];
-			$order_detail_results = json_decode($_POST['order_detail_results'], true);
+			$order_detail_results = is_string($_POST['order_detail_results'] ?? null) ? json_decode($_POST['order_detail_results'], true) : null;
 
-			if($_POST['merge_pay_status'] == 'FINISHED' && $out_trade_no == TRADE_NO){
-
+			if(($_POST['merge_pay_status'] ?? null) === 'FINISHED' && $out_trade_no === TRADE_NO){
+				// Validate every stored child before any child mutation or settlement call.
+				$stored_orders = \lib\Payment::getSubOrders(TRADE_NO);
+				if(!is_array($order_detail_results) || !$order_detail_results || !is_array($stored_orders) || count($stored_orders) !== count($order_detail_results)){
+					return ['type'=>'html','data'=>'fail'];
+				}
+				$expected = [];
+				foreach($stored_orders as $stored){
+					$expected[$stored['sub_trade_no']] = $stored['money'];
+				}
 				$sub_orders = [];
+				$total_cents = 0;
 				foreach($order_detail_results as $detail){
+					if(!is_array($detail) || !is_string($detail['out_trade_no'] ?? null) || !isset($expected[$detail['out_trade_no']])
+						|| ($detail['trade_status'] ?? null) !== 'TRADE_SUCCESS' || ($detail['app_id'] ?? null) !== (string)$channel['appid']
+						|| !is_string($detail['trade_no'] ?? null) || $detail['trade_no'] === ''
+						|| !is_string($detail['total_amount'] ?? null) || !preg_match('/^[0-9]{1,12}(?:\.[0-9]{1,2})?$/D', $detail['total_amount'])
+						|| !self::combineMoneyMatch($detail['total_amount'], $expected[$detail['out_trade_no']])){
+						return ['type'=>'html','data'=>'fail'];
+					}
+					$parts = explode('.', $detail['total_amount'], 2);
+					$total_cents += (int)$parts[0] * 100 + (int)str_pad($parts[1] ?? '', 2, '0');
+					unset($expected[$detail['out_trade_no']]);
 					$sub_orders[] = ['sub_trade_no'=>$detail['out_trade_no'], 'api_trade_no'=>$detail['trade_no'], 'money'=>$detail['total_amount']];
 				}
+				$total_amount = intdiv($total_cents, 100).'.'.str_pad((string)($total_cents % 100), 2, '0', STR_PAD_LEFT);
+				if($expected || !self::combineMoneyMatch($total_amount, $order['realmoney'])) return ['type'=>'html','data'=>'fail'];
 				\lib\Payment::processSubOrders(TRADE_NO, $sub_orders);
 
 				if($conf['direct_settle_time'] > 0 && $order['profits'] == 0){
@@ -1008,7 +1039,7 @@ class alipayd_plugin
 					}
 				}
 				
-				if(epay_callback_money_match($total_amount, $order['realmoney'])){
+				if(self::combineMoneyMatch($total_amount, $order['realmoney'])){
 					processNotify($order, $out_trade_no, $buyer_id);
 				}
 			}

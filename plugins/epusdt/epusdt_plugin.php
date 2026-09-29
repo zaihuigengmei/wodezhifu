@@ -91,19 +91,44 @@ class epusdt_plugin
         }
 
         $out_trade_no = $data['out_trade_no'] ?? '';
-        $trade_no = $data['trade_no'] ?? ($data['trade_id'] ?? '');
-        $money = $data['money'] ?? ($data['amount'] ?? 0);
-        $status = $data['trade_status'] ?? ($data['status'] ?? '');
-        $pid = isset($data['pid']) ? trim((string)$data['pid']) : trim((string)$channel['appid']);
+        $trade_no = $data['trade_no'] ?? '';
+        $money = $data['money'] ?? null;
+        $status = $data['trade_status'] ?? '';
+        $pid = isset($data['pid']) ? (string)$data['pid'] : '';
 
-        if (($status === 'TRADE_SUCCESS' || $status === 'TRADE_FINISHED' || $status === '2' || $status === 2)
-            && $out_trade_no == TRADE_NO
+        if ($status === 'TRADE_SUCCESS' && $out_trade_no === TRADE_NO
+            && is_string($trade_no) && $trade_no !== ''
             && $pid === trim((string)$channel['appid'])
-            && round((float)$money, 2) == round((float)$order['realmoney'], 2)) {
+            && ($data['type'] ?? null) === $order['typename']
+            && (!isset($data['sign_type']) || $data['sign_type'] === 'MD5')
+            && self::moneyMatch($money, $order['realmoney'])) {
             processNotify($order, $trade_no);
             return ['type' => 'html', 'data' => 'success'];
         }
         return ['type' => 'html', 'data' => 'fail - status error'];
+    }
+
+    // Fiat order amounts: compare exact decimal values, never round underpayments up.
+    private static function moneyMatch($paid, $expected): bool
+    {
+        $normalize = static function ($value) {
+            if (!is_string($value) && !is_int($value) && !is_float($value)) return null;
+            $value = (string)$value;
+            if (!preg_match('/\A[0-9]+(?:\.[0-9]+)?\z/', $value)) return null;
+            $parts = explode('.', $value, 2);
+            return (ltrim($parts[0], '0') ?: '0') . '.' . rtrim($parts[1] ?? '', '0');
+        };
+        $left = $normalize($paid);
+        return $left !== null && $left !== '0.' && $left === $normalize($expected);
+    }
+
+    private static function validScalars(array $data): bool
+    {
+        foreach ($data as $value) {
+            if ($value !== null && !is_string($value) && !is_int($value) && !is_float($value)) return false;
+            if (is_float($value) && !is_finite($value)) return false;
+        }
+        return true;
     }
 
     public static function return(): array
@@ -118,15 +143,17 @@ class epusdt_plugin
         }
 
         $out_trade_no = $data['out_trade_no'] ?? '';
-        $trade_no = $data['trade_no'] ?? ($data['trade_id'] ?? '');
-        $money = $data['money'] ?? ($data['amount'] ?? 0);
-        $status = $data['trade_status'] ?? ($data['status'] ?? '');
-        $pid = isset($data['pid']) ? trim((string)$data['pid']) : trim((string)$channel['appid']);
+        $trade_no = $data['trade_no'] ?? '';
+        $money = $data['money'] ?? null;
+        $status = $data['trade_status'] ?? '';
+        $pid = isset($data['pid']) ? (string)$data['pid'] : '';
 
-        if (($status === 'TRADE_SUCCESS' || $status === 'TRADE_FINISHED' || $status === '2' || $status === 2)
-            && $out_trade_no == TRADE_NO
+        if ($status === 'TRADE_SUCCESS' && $out_trade_no === TRADE_NO
+            && is_string($trade_no) && $trade_no !== ''
             && $pid === trim((string)$channel['appid'])
-            && round((float)$money, 2) == round((float)$order['realmoney'], 2)) {
+            && ($data['type'] ?? null) === $order['typename']
+            && (!isset($data['sign_type']) || $data['sign_type'] === 'MD5')
+            && self::moneyMatch($money, $order['realmoney'])) {
             processReturn($order, $trade_no);
             return ['type' => 'page', 'page' => 'return'];
         }
@@ -154,7 +181,9 @@ class epusdt_plugin
 
     private static function verify(array $parameter, string $key): bool
     {
-        if (empty($parameter['sign'])) {
+        if (!self::validScalars($parameter) || !isset($parameter['sign'])
+            || !is_string($parameter['sign'])
+            || !preg_match('/\A[0-9a-f]{32}\z/', $parameter['sign'])) {
             return false;
         }
         return hash_equals(self::sign($parameter, $key), (string)$parameter['sign']);

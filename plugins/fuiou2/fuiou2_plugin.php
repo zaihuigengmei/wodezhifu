@@ -359,6 +359,12 @@ class fuiou2_plugin
 		}
 	}
 
+	static private function scanCentMatch($paid, $expected){
+		if((!is_string($paid) && !is_int($paid)) || !preg_match('/^[0-9]{1,14}$/D', (string)$paid)) return false;
+		if(!is_scalar($expected) || !preg_match('/^([0-9]{1,12})(?:\.([0-9]{1,2}))?$/D', (string)$expected, $m)) return false;
+		return ltrim((string)$paid, '0') === ltrim($m[1].str_pad($m[2] ?? '', 2, '0'), '0');
+	}
+
 	//被扫支付
 	static public function scanpay(){
 		global $siteurl, $channel, $order, $ordername, $conf, $clientip;
@@ -392,42 +398,37 @@ class fuiou2_plugin
 
 		try{
 			$result = $client->submit('/micropay', $params);
-			if($result['result_code'] == '000000'){
-				if(isset($result['total_amount']) && epay_callback_cent_match($result['total_amount'], $order['realmoney'])){
-					processNotify($order, $result['reserved_mchnt_order_no'], $result['buyer_id'], $result['transaction_id']);
-				}
-				return ['type'=>'scan','data'=>['type'=>$order['typename'], 'trade_no'=>TRADE_NO, 'api_trade_no'=>$result['reserved_mchnt_order_no'], 'buyer'=>$result['buyer_id'], 'money'=>strval(round($result['total_amount']/100, 2))]];
-			}else{
-				$retry = 0;
-				$success = false;
-				while($retry < 6){
-					sleep(3);
-					try{
-						$result = self::orderQuery($client, $channel['appurl'].TRADE_NO, $order_type);
-					}catch(Exception $e){
-						return ['type'=>'error','msg'=>'订单查询失败:'.$e->getMessage()];
-					}
-					if($result['trans_stat'] == 'SUCCESS'){
-						$success = true;
-						break;
-					}elseif($result['tranSts'] != 'USERPAYING' && $result['tranSts'] != 'NOTPAY'){
-						return ['type'=>'error','msg'=>'订单超时或用户取消支付'];
-					}
-					$retry++;
-				}
-				if($success){
-					if(isset($result['order_amt']) && epay_callback_cent_match($result['order_amt'], $order['realmoney'])){
-						processNotify($order, $result['mchnt_order_no'], $result['buyer_id'], $result['transaction_id']);
-					}
-					return ['type'=>'scan','data'=>['type'=>$order['typename'], 'trade_no'=>$result['orderNo'], 'api_trade_no'=>$result['mchnt_order_no'], 'buyer'=>$result['buyer_id'], 'money'=>strval(round($result['order_amt']/100, 2))]];
-				}else{
-					try{
-						self::orderRevoked($client, $channel['appurl'].TRADE_NO, $order_type);
-					}catch(Exception $e){
-					}
-					return ['type'=>'error','msg'=>'被扫下单失败！订单已超时'];
-				}
+			$immediate = ($result['result_code'] ?? null) === '000000';
+			if($immediate && (!self::scanCentMatch($result['total_amount'] ?? null, $order['realmoney'])
+				|| ($result['reserved_mchnt_order_no'] ?? null) !== $channel['appurl'].TRADE_NO)){
+				return ['type'=>'error','msg'=>'支付响应订单或金额校验失败'];
 			}
+			// reserved_* fields are NOT signed. Confirm even immediate success via
+			// commonQuery, whose mchnt_order_no/order_amt/trans_stat are signed.
+			for($retry = 0; $retry < 6; $retry++){
+				if(!$immediate || $retry > 0) sleep(5);
+				$result = self::orderQuery($client, $channel['appurl'].TRADE_NO, $order_type);
+				if(($result['result_code'] ?? null) !== '000000'
+					|| ($result['mchnt_order_no'] ?? null) !== $channel['appurl'].TRADE_NO
+					|| ($result['mchnt_cd'] ?? null) !== (string)$channel['appmchid']
+					|| ($result['ins_cd'] ?? null) !== (string)$channel['appid']
+					|| ($result['order_type'] ?? null) !== $order_type
+					|| !self::scanCentMatch($result['order_amt'] ?? null, $order['realmoney'])){
+					return ['type'=>'error','msg'=>'订单查询身份或金额校验失败'];
+				}
+				if(($result['trans_stat'] ?? null) === 'SUCCESS'){
+					if(!is_string($result['transaction_id'] ?? null) || $result['transaction_id'] === '') return ['type'=>'error','msg'=>'订单查询缺少交易流水'];
+					$buyer = is_string($result['buyer_id'] ?? null) ? $result['buyer_id'] : '';
+					processNotify($order, $result['mchnt_order_no'], $buyer, $result['transaction_id']);
+					return ['type'=>'scan','data'=>['type'=>$order['typename'], 'trade_no'=>TRADE_NO, 'api_trade_no'=>$result['mchnt_order_no'], 'buyer'=>$buyer, 'money'=>(string)$order['realmoney']]];
+				}
+				if(!in_array($result['trans_stat'] ?? null, ['USERPAYING', 'NOTPAY'], true)) return ['type'=>'error','msg'=>'订单超时或用户取消支付'];
+			}
+			try{
+				self::orderRevoked($client, $channel['appurl'].TRADE_NO, $order_type);
+			}catch(Exception $e){
+			}
+			return ['type'=>'error','msg'=>'被扫下单失败！订单已超时'];
 		}catch(Exception $e){
 			return ['type'=>'error','msg'=>'被扫下单失败！'.$e->getMessage()];
 		}
@@ -439,7 +440,7 @@ class fuiou2_plugin
 			'order_type' => $order_type,
 			'mchnt_order_no' => $out_trade_no,
 		];
-		$result = $client->request('/commonQuery', $params);
+		$result = $client->submit('/commonQuery', $params);
 		return $result;
 	}
 
@@ -451,7 +452,7 @@ class fuiou2_plugin
 			'cancel_order_no' => date('YmdHis').rand(1000,9999),
 			'operator_id' => '',
 		];
-		$result = $client->request('/cancelorder', $params);
+		$result = $client->submit('/cancelorder', $params);
 		return $result;
 	}
 
@@ -477,8 +478,11 @@ class fuiou2_plugin
 				$api_trade_no = $arr['mchnt_order_no'];
 				$bill_trade_no = $arr['transaction_id'];
 				$money = $arr['order_amt'];
-				$buyer = $arr['user_id'];
-				if($out_trade_no == TRADE_NO && epay_callback_cent_match($money, $order['realmoney'])){
+				$buyer = is_string($arr['user_id'] ?? null) ? $arr['user_id'] : '';
+				if(($arr['mchnt_order_no'] ?? null) === $channel['appurl'].TRADE_NO
+					&& ($arr['mchnt_cd'] ?? null) === (string)$channel['appmchid']
+					&& ($arr['ins_cd'] ?? null) === (string)$channel['appid']
+					&& self::scanCentMatch($money, $order['realmoney'])){
 					processNotify($order, $api_trade_no, $buyer, $bill_trade_no);
 				}
 				return ['type'=>'html','data'=>'1'];

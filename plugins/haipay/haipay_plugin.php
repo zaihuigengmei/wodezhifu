@@ -358,8 +358,10 @@ class haipay_plugin
 		$api_trade_no = $result['trade_no'];
 		if($result['trade_status'] == '1'){
 			$result = self::orderQuery($client, $api_trade_no);
-			if(($result['out_trade_no'] ?? '') == TRADE_NO && epay_callback_money_match(($result['order_amount'] ?? null), $order['realmoney'])){
+			if(($result['trade_status'] ?? null) == '1' && ($result['out_trade_no'] ?? '') == TRADE_NO && epay_callback_money_match(($result['order_amount'] ?? null), $order['realmoney'])){
 				processNotify($order, $api_trade_no, $result['openid'], $result['bank_trade_no']);
+			}else{
+				return ['type'=>'error','msg'=>'订单支付状态或金额校验失败'];
 			}
 			return ['type'=>'scan','data'=>['type'=>$order['typename'], 'trade_no'=>$result['out_trade_no'], 'api_trade_no'=>$api_trade_no, 'buyer'=>$result['openid'], 'money'=>$result['order_amount']]];
 		}else{
@@ -381,8 +383,10 @@ class haipay_plugin
 				$retry++;
 			}
 			if($success){
-				if(($result['out_trade_no'] ?? '') == TRADE_NO && epay_callback_money_match(($result['order_amount'] ?? null), $order['realmoney'])){
+				if(($result['trade_status'] ?? null) == '1' && ($result['out_trade_no'] ?? '') == TRADE_NO && epay_callback_money_match(($result['order_amount'] ?? null), $order['realmoney'])){
 					processNotify($order, $api_trade_no, $result['openid'], $result['bank_trade_no']);
+				}else{
+					return ['type'=>'error','msg'=>'订单支付状态或金额校验失败'];
 				}
 				return ['type'=>'scan','data'=>['type'=>$order['typename'], 'trade_no'=>$result['out_trade_no'], 'api_trade_no'=>$api_trade_no, 'buyer'=>$result['openid'], 'money'=>$result['order_amount']]];
 			}else{

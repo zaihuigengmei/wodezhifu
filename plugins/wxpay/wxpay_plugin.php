@@ -333,6 +333,24 @@ class wxpay_plugin
 		}
 	}
 
+	// APIv2 total_fee is integer cents; compare strings without rounding/truncation.
+	static private function paidResultMatches($data, $query = false){
+		global $channel, $order;
+		if(!is_array($data) || ($data['return_code'] ?? null) !== 'SUCCESS' || ($data['result_code'] ?? null) !== 'SUCCESS') return false;
+		if($query && ($data['trade_state'] ?? null) !== 'SUCCESS') return false;
+		if(isset($data['trade_state']) && $data['trade_state'] !== 'SUCCESS') return false;
+		if(($data['out_trade_no'] ?? null) !== TRADE_NO) return false;
+		if(!is_string($data['transaction_id'] ?? null) || $data['transaction_id'] === '') return false;
+		if(!is_string($data['mch_id'] ?? null) || $data['mch_id'] !== (string)$channel['appmchid']) return false;
+		if(array_key_exists('fee_type', $data) && $data['fee_type'] !== 'CNY') return false;
+		$cents = $data['total_fee'] ?? null;
+		$money = $order['realmoney'] ?? null;
+		if((!is_string($cents) && !is_int($cents)) || !preg_match('/\A[0-9]+\z/', (string)$cents)) return false;
+		if((!is_string($money) && !is_int($money)) || !preg_match('/\A([0-9]+)(?:\.([0-9]{1,2})0*)?\z/', (string)$money, $m)) return false;
+		$expected = ltrim($m[1].str_pad($m[2] ?? '', 2, '0'), '0');
+		return $expected !== '' && ltrim((string)$cents, '0') === $expected;
+	}
+
 	//付款码支付
 	static public function scanpay(){
 		global $siteurl, $channel, $order, $ordername, $conf, $clientip;
@@ -348,9 +366,10 @@ class wxpay_plugin
 		$client = new \WeChatPay\PaymentService($wechatpay_config);
 		try{
 			$result = $client->microPay($params);
-			if(($result['out_trade_no'] ?? '') == TRADE_NO && isset($result['total_fee']) && (int)$result['total_fee'] === (int)round($order['realmoney']*100)){
-				processNotify($order, $result['transaction_id'], $result['openid']);
+			if(!self::paidResultMatches($result) || ($result['trade_type'] ?? null) !== 'MICROPAY'){
+				return ['type'=>'error','msg'=>'微信支付结果与本地订单不匹配'];
 			}
+			processNotify($order, $result['transaction_id'], $result['openid']);
 			return ['type'=>'scan','data'=>['type'=>$order['typename'], 'trade_no'=>$result['out_trade_no'], 'api_trade_no'=>$result['transaction_id'], 'buyer'=>$result['openid'], 'money'=>strval(round($result['total_fee']/100, 2))]];
 		}catch(\WeChatPay\WeChatPayException $e){
 			$err_code = $e->getErrCode();
@@ -365,18 +384,19 @@ class wxpay_plugin
 					}catch(Exception $e){
 						return ['type'=>'error','msg'=>'微信支付失败！订单查询失败:'.$e->getMessage()];
 					}
-					if($result['trade_state'] == 'SUCCESS'){
+					if(($result['trade_state'] ?? null) === 'SUCCESS'){
 						$success = true;
 						break;
-					}elseif($result['trade_state'] != 'USERPAYING'){
+					}elseif(($result['trade_state'] ?? null) !== 'USERPAYING'){
 						return ['type'=>'error','msg'=>'微信支付失败！订单超时或用户取消支付'];
 					}
 					$retry++;
 				}
 				if($success){
-					if(($result['out_trade_no'] ?? '') == TRADE_NO && isset($result['total_fee']) && (int)$result['total_fee'] === (int)round($order['realmoney']*100)){
-						processNotify($order, $result['transaction_id'], $result['openid']);
+					if(!self::paidResultMatches($result, true)){
+						return ['type'=>'error','msg'=>'微信支付查询结果与本地订单不匹配'];
 					}
+					processNotify($order, $result['transaction_id'], $result['openid']);
 					return ['type'=>'scan','data'=>['type'=>$order['typename'], 'trade_no'=>$result['out_trade_no'], 'api_trade_no'=>$result['transaction_id'], 'buyer'=>$result['openid'], 'money'=>strval(round($result['total_fee']/100, 2))]];
 				}else{
 					try{
@@ -420,13 +440,20 @@ class wxpay_plugin
 		global $channel, $order;
 
 		$isSuccess = true;
+		$errmsg = '';
 		$wechatpay_config = require(PAY_ROOT.'inc/config.php');
 		try{
 			$client = new \WeChatPay\PaymentService($wechatpay_config);
 			$data = $client->notify();
-			if($data['out_trade_no'] == TRADE_NO && $data['total_fee']==strval($order['realmoney']*100)){
-				processNotify($order, $data['transaction_id'], $data['openid']);
+			if(!self::paidResultMatches($data)){
+				throw new Exception('微信支付通知与本地订单不匹配');
 			}
+			// SDK notify() accepts REFUND via orderQueryResult(); only SUCCESS may settle.
+			$result = $client->orderQuery(null, TRADE_NO);
+			if(!self::paidResultMatches($result, true) || $result['transaction_id'] !== $data['transaction_id']){
+				throw new Exception('微信支付订单未成功或查询结果不匹配');
+			}
+			processNotify($order, $data['transaction_id'], $data['openid']);
 		}catch(Exception $e){
 			$isSuccess = false;
 			$errmsg = $e->getMessage();
