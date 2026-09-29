@@ -447,7 +447,7 @@ if($group_settings){
 					<div class="col-xs-6"><span class="pull-right" style="margin-top:5px"><img src="assets/img/qqpay.png" style="margin-top: -6px;margin-bottom: -2px; height:30px">&nbsp;&nbsp;&nbsp;ＱＱ快捷登录&nbsp;&nbsp;&nbsp;&nbsp;</span></div>
 					<div class="col-xs-6">
 					<?php if($userrow['qq_uid']){?>
-						<a class="btn btn-sm btn-success" disabled title="<?php echo $userrow['qq_uid']?>">已绑定</a>&nbsp;&nbsp;&nbsp;<a class="btn btn-sm btn-danger" href="./connect.php?unbind=1" onclick="return confirm('解绑后将无法通过QQ一键登录，是否确定解绑？');">解绑</a>
+						<a class="btn btn-sm btn-success" disabled title="<?php echo $userrow['qq_uid']?>">已绑定</a>&nbsp;&nbsp;&nbsp;<a class="btn btn-sm btn-danger" href="./connect.php?unbind=1&csrf_token=<?php echo urlencode(csrf_token('user'))?>" onclick="return confirm('解绑后将无法通过QQ一键登录，是否确定解绑？');">解绑</a>
 					<?php }else{?>
 						<a class="btn btn-sm btn-success" href="javascript:connect('qq')">立即绑定</a>
 					<?php }?>
@@ -459,7 +459,7 @@ if($group_settings){
 					<div class="col-xs-6"><span class="pull-right" style="margin-top:5px"><img src="assets/img/wxpay.png" style="margin-top: -6px;margin-bottom: -2px; height:30px">&nbsp;&nbsp;&nbsp;&nbsp;微信快捷登录&nbsp;&nbsp;&nbsp;</span></div>
 					<div class="col-xs-6">
 					<?php if($userrow['wx_uid']){?>
-						<a class="btn btn-sm btn-success" disabled title="<?php echo $userrow['wx_uid']?>">已绑定</a>&nbsp;&nbsp;&nbsp;<a class="btn btn-sm btn-danger" href="./wxlogin.php?unbind=1" onclick="return confirm('解绑后将无法通过微信一键登录，是否确定解绑？');">解绑</a>
+						<a class="btn btn-sm btn-success" disabled title="<?php echo $userrow['wx_uid']?>">已绑定</a>&nbsp;&nbsp;&nbsp;<a class="btn btn-sm btn-danger" href="./wxlogin.php?unbind=1&csrf_token=<?php echo urlencode(csrf_token('user'))?>" onclick="return confirm('解绑后将无法通过微信一键登录，是否确定解绑？');">解绑</a>
 					<?php }else{?>
 						<a class="btn btn-sm btn-success" href="javascript:connect('wx')">立即绑定</a>
 					<?php }?>
@@ -471,7 +471,7 @@ if($group_settings){
 					<div class="col-xs-6"><span class="pull-right" style="margin-top:5px"><img src="assets/img/alipay.png" style="margin-top: -6px;margin-bottom: -2px; height:30px">&nbsp;&nbsp;支付宝快捷登录</span></div>
 					<div class="col-xs-6">
 					<?php if($userrow['alipay_uid']){?>
-						<a class="btn btn-sm btn-success" disabled title="<?php echo $userrow['alipay_uid']?>">已绑定</a>&nbsp;&nbsp;&nbsp;<a class="btn btn-sm btn-danger" href="./oauth.php?unbind=1" onclick="return confirm('解绑后将无法通过支付宝一键登录，是否确定解绑？');">解绑</a>
+						<a class="btn btn-sm btn-success" disabled title="<?php echo $userrow['alipay_uid']?>">已绑定</a>&nbsp;&nbsp;&nbsp;<a class="btn btn-sm btn-danger" href="./oauth.php?unbind=1&csrf_token=<?php echo urlencode(csrf_token('user'))?>" onclick="return confirm('解绑后将无法通过支付宝一键登录，是否确定解绑？');">解绑</a>
 					<?php }else{?>
 						<a class="btn btn-sm btn-success" href="javascript:connect('alipay')">立即绑定</a>
 					<?php }?>

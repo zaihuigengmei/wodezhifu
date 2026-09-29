@@ -20,12 +20,32 @@ function display_status($status){
 }
 
 function csv_text($value){
-	$value = str_replace(["
-", "
-"], ' ', (string)$value);
+	$value = str_replace(["\r", "\n"], ' ', (string)$value);
 	if(preg_match('/^[=+\-@]/', $value)) $value = "'".$value;
 	$value = str_replace('"', '""', $value);
 	return '"'.$value.'"';
+}
+function user_export_date($key){
+	$value = isset($_GET[$key]) ? trim($_GET[$key]) : '';
+	if($value !== '' && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $value)) exit('param error');
+	return $value;
+}
+function user_export_token($value, $max=128){
+	$value = trim((string)$value);
+	if($value === '') return '';
+	if(strlen($value) > intval($max) || !preg_match('/^[a-zA-Z0-9_.:\-@]+$/', $value)) exit('param error');
+	return daddslashes($value);
+}
+function user_export_money($value){
+	$value = trim((string)$value);
+	if($value === '' || !preg_match('/^\d+(\.\d{1,2})?$/', $value)) exit('param error');
+	return $value;
+}
+function user_export_text($value, $max=128){
+	$value = trim(str_replace(["\r", "\n"], ' ', (string)$value));
+	if($value === '') return '';
+	if(mb_strlen($value) > intval($max)) exit('param error');
+	return daddslashes($value);
 }
 function display_psstatus($status){
 	if($status==1){
@@ -68,41 +88,28 @@ if(isset($_GET['dstatus']) && $_GET['dstatus']>-1) {
 	$dstatus = intval($_GET['dstatus']);
 	$sql.=" AND A.status='{$dstatus}'";
 }
-if(!empty($_GET['starttime']) || !empty($_GET['endtime'])){
-	if(!empty($_GET['starttime'])){
-		$starttime = daddslashes($_GET['starttime']);
-		$sql.=" AND A.addtime>='{$starttime} 00:00:00'";
-	}
-	if(!empty($_GET['endtime'])){
-		$endtime = daddslashes($_GET['endtime']);
-		$sql.=" AND A.addtime<='{$endtime} 23:59:59'";
-	}
+$starttime = user_export_date('starttime');
+$endtime = user_export_date('endtime');
+if($starttime !== ''){
+	$sql.=" AND A.addtime>='{$starttime} 00:00:00'";
 }
-if(isset($_GET['kw']) && !empty($_GET['kw'])) {
-	$kw=daddslashes($_GET['kw']);
-	if($_GET['type']==1){
-		$sql.=" AND A.`trade_no`='{$kw}'";
-	}elseif($_GET['type']==2){
-		$sql.=" AND A.`out_trade_no`='{$kw}'";
-	}elseif($_GET['type']==3){
-		$sql.=" AND A.`name` like '%{$kw}%'";
-	}elseif($_GET['type']==4){
-		$sql.=" AND A.`money`='{$kw}'";
-	}elseif($_GET['type']==5){
-		$sql.=" AND A.`realmoney`='{$kw}'";
-	}elseif($_GET['type']==6){
-		$sql.=" AND A.`domain`='{$kw}'";
-	}elseif($_GET['type']==7){
-		$sql.=" AND A.`ip`='{$kw}'";
-	}elseif($_GET['type']==8){
-		$sql.=" AND A.`buyer`='{$kw}'";
-	}elseif($_GET['type']==9){
-		$sql.=" AND A.`api_trade_no`='{$kw}'";
-	}elseif($_GET['type']==10){
-		$sql.=" AND A.`bill_trade_no`='{$kw}'";
-	}elseif($_GET['type']==11){
-		$sql.=" AND A.`param`='{$kw}'";
-	}
+if($endtime !== ''){
+	$sql.=" AND A.addtime<='{$endtime} 23:59:59'";
+}
+if(isset($_GET['kw']) && $_GET['kw'] !== '') {
+	$search_type = isset($_GET['type']) ? intval($_GET['type']) : 0;
+	if($search_type==1){ $kw=user_export_token($_GET['kw'],64); $sql.=" AND A.`trade_no`='{$kw}'";
+	}elseif($search_type==2){ $kw=user_export_token($_GET['kw'],128); $sql.=" AND A.`out_trade_no`='{$kw}'";
+	}elseif($search_type==3){ $kw=user_export_text($_GET['kw'],80); $sql.=" AND A.`name` like '%{$kw}%'";
+	}elseif($search_type==4){ $kw=user_export_money($_GET['kw']); $sql.=" AND A.`money`='{$kw}'";
+	}elseif($search_type==5){ $kw=user_export_money($_GET['kw']); $sql.=" AND A.`realmoney`='{$kw}'";
+	}elseif($search_type==6){ $kw=user_export_text($_GET['kw'],128); $sql.=" AND A.`domain`='{$kw}'";
+	}elseif($search_type==7){ $kw=user_export_token($_GET['kw'],45); $sql.=" AND A.`ip`='{$kw}'";
+	}elseif($search_type==8){ $kw=user_export_text($_GET['kw'],128); $sql.=" AND A.`buyer`='{$kw}'";
+	}elseif($search_type==9){ $kw=user_export_token($_GET['kw'],128); $sql.=" AND A.`api_trade_no`='{$kw}'";
+	}elseif($search_type==10){ $kw=user_export_token($_GET['kw'],128); $sql.=" AND A.`bill_trade_no`='{$kw}'";
+	}elseif($search_type==11){ $kw=user_export_token($_GET['kw'],128); $sql.=" AND A.`param`='{$kw}'";
+	}else{ exit('param error'); }
 }
 
 $file="系统订单号,商户订单号,接口订单号,商户ID,网站域名,商品名称,订单金额,实际支付,商户分成,支付方式,支付账号,支付IP,创建时间,完成时间,支付状态,已退款金额,退款时间\r\n";
@@ -116,7 +123,7 @@ while($row = $rs->fetch()){
 }
 
 $file = hex2bin('efbbbf').$file;
-$file_name='order_'.$starttime.'_'.$endtime.'.csv';
+$file_name='order_'.($starttime?:'all').'_'.($endtime?:'all').'.csv';
 $file_size=strlen($file);
 header("Content-Description: File Transfer");
 header("Content-Type: application/force-download");
@@ -145,31 +152,23 @@ if(isset($_GET['dstatus']) && $_GET['dstatus']>-1) {
 	$dstatus = intval($_GET['dstatus']);
 	$sql.=" AND A.`status`={$dstatus}";
 }
-if(!empty($_GET['starttime']) || !empty($_GET['endtime'])){
-	if(!empty($_GET['starttime'])){
-		$starttime = daddslashes($_GET['starttime']);
-		$sql.=" AND A.addtime>='{$starttime} 00:00:00'";
-	}
-	if(!empty($_GET['endtime'])){
-		$endtime = daddslashes($_GET['endtime']);
-		$sql.=" AND A.addtime<='{$endtime} 23:59:59'";
-	}
+$starttime = user_export_date('starttime');
+$endtime = user_export_date('endtime');
+if($starttime !== ''){
+	$sql.=" AND A.addtime>='{$starttime} 00:00:00'";
 }
-if(isset($_GET['kw']) && !empty($_GET['kw'])) {
-	$kw=daddslashes($_GET['kw']);
-	if($_GET['type']==1){
-		$sql.=" AND A.`trade_no`='{$kw}'";
-	}elseif($_GET['type']==2){
-		$sql.=" AND A.`thirdid`='{$kw}'";
-	}elseif($_GET['type']==3){
-		$sql.=" AND A.`type`='{$kw}'";
-	}elseif($_GET['type']==4){
-		$sql.=" AND A.`title` like '%{$kw}%'";
-	}elseif($_GET['type']==5){
-		$sql.=" AND A.`content` like '%{$kw}%'";
-	}elseif($_GET['type']==6){
-		$sql.=" AND A.`phone`='{$kw}'";
-	}
+if($endtime !== ''){
+	$sql.=" AND A.addtime<='{$endtime} 23:59:59'";
+}
+if(isset($_GET['kw']) && $_GET['kw'] !== '') {
+	$search_type = isset($_GET['type']) ? intval($_GET['type']) : 0;
+	if($search_type==1){ $kw=user_export_token($_GET['kw'],64); $sql.=" AND A.`trade_no`='{$kw}'";
+	}elseif($search_type==2){ $kw=user_export_token($_GET['kw'],128); $sql.=" AND A.`thirdid`='{$kw}'";
+	}elseif($search_type==3){ $kw=user_export_text($_GET['kw'],32); $sql.=" AND A.`type`='{$kw}'";
+	}elseif($search_type==4){ $kw=user_export_text($_GET['kw'],128); $sql.=" AND A.`title` like '%{$kw}%'";
+	}elseif($search_type==5){ $kw=user_export_text($_GET['kw'],128); $sql.=" AND A.`content` like '%{$kw}%'";
+	}elseif($search_type==6){ $kw=user_export_token($_GET['kw'],32); $sql.=" AND A.`phone`='{$kw}'";
+	}else{ exit('param error'); }
 }
 
 $file="ID,支付方式,商户ID,关联订单号,商品名称,订单金额,问题类型,投诉原因,投诉详情,创建时间,最后更新时间,状态\r\n";
@@ -206,25 +205,20 @@ if(isset($_GET['dstatus']) && $_GET['dstatus']>-1) {
 	$dstatus = intval($_GET['dstatus']);
 	$sql.=" AND A.`status`={$dstatus}";
 }
-if(!empty($_GET['starttime']) || !empty($_GET['endtime'])){
-	if(!empty($_GET['starttime'])){
-		$starttime = daddslashes($_GET['starttime']);
-		$sql.=" AND A.addtime>='{$starttime} 00:00:00'";
-	}
-	if(!empty($_GET['endtime'])){
-		$endtime = daddslashes($_GET['endtime']);
-		$sql.=" AND A.addtime<='{$endtime} 23:59:59'";
-	}
+$starttime = user_export_date('starttime');
+$endtime = user_export_date('endtime');
+if($starttime !== ''){
+	$sql.=" AND A.addtime>='{$starttime} 00:00:00'";
 }
-if(isset($_GET['kw']) && !empty($_GET['kw'])) {
-	$kw=daddslashes($_GET['kw']);
-	if($_GET['type']==1){
-		$sql.=" AND A.`trade_no`='{$kw}'";
-	}elseif($_GET['type']==2){
-		$sql.=" AND A.`api_trade_no`='{$kw}'";
-	}elseif($_GET['type']==3){
-		$sql.=" AND A.`money` like '%{$kw}%'";
-	}
+if($endtime !== ''){
+	$sql.=" AND A.addtime<='{$endtime} 23:59:59'";
+}
+if(isset($_GET['kw']) && $_GET['kw'] !== '') {
+	$search_type = isset($_GET['type']) ? intval($_GET['type']) : 0;
+	if($search_type==1){ $kw=user_export_token($_GET['kw'],64); $sql.=" AND A.`trade_no`='{$kw}'";
+	}elseif($search_type==2){ $kw=user_export_token($_GET['kw'],128); $sql.=" AND A.`api_trade_no`='{$kw}'";
+	}elseif($search_type==3){ $kw=user_export_money($_GET['kw']); $sql.=" AND A.`money`='{$kw}'";
+	}else{ exit('param error'); }
 }
 
 $file="系统订单号,分账规则,支付方式,订单金额,分账金额,时间,分账状态\r\n";
@@ -235,7 +229,7 @@ while($row = $rs->fetch()){
 }
 
 $file = hex2bin('efbbbf').$file;
-$file_name='psorder_'.$starttime.'_'.$endtime.'.csv';
+$file_name='psorder_'.($starttime?:'all').'_'.($endtime?:'all').'.csv';
 $file_size=strlen($file);
 header("Content-Description: File Transfer");
 header("Content-Type: application/force-download");

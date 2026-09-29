@@ -381,6 +381,7 @@ class xsy_plugin
 		try{
 			$result = $client->request('/trade/reverseScan', $params);
 			if($client->res_code == '0000'){
+				if(!self::notifyResultValid($result, $order)) return ['type'=>'error','msg'=>'网关返回订单号或金额不匹配'];
 				processNotify($order, $result['outOrderNo'], $result['buyerId'], $result['transactionId']);
 				return ['type'=>'scan','data'=>['type'=>$order['typename'], 'trade_no'=>$result['orderNo'], 'api_trade_no'=>$result['outOrderNo'], 'buyer'=>$result['buyerId'], 'money'=>$order['realmoney']]];
 			}else{
@@ -402,6 +403,7 @@ class xsy_plugin
 					$retry++;
 				}
 				if($success){
+					if(!self::notifyResultValid($result, $order)) return ['type'=>'error','msg'=>'网关返回订单号或金额不匹配'];
 					processNotify($order, $result['outOrderNo'], $result['buyerId'], $result['transactionId']);
 					return ['type'=>'scan','data'=>['type'=>$order['typename'], 'trade_no'=>$result['orderNo'], 'api_trade_no'=>$result['outOrderNo'], 'buyer'=>$result['buyerId'], 'money'=>strval(round($result['amt']/100, 2))]];
 				}else{
@@ -437,6 +439,10 @@ class xsy_plugin
 		$result = $client->request('/trade/cancel', $params);
 		return $result;
 	}
+
+    static private function notifyResultValid($result, $order){
+        return isset($result['orderNo'], $result['amt']) && $result['orderNo'] == TRADE_NO && epay_callback_cent_match($result['amt'], $order['realmoney']);
+    }
 
     //回调
     public static function notify()

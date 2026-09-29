@@ -2,6 +2,8 @@
 include("../includes/common.php");
 
 if($islogin==1){}else exit("<script language='javascript'>window.location.href='./login.php';</script>");
+if(!checkRefererHost())exit();
+csrf_check_page('admin');
 
 $uid=intval($_GET['uid']);
 

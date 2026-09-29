@@ -97,6 +97,8 @@ if(isset($_GET['auth_code'])){
 	}
 
 }elseif($islogin2==1 && isset($_GET['unbind'])){
+	if(!checkRefererHost())exit();
+	csrf_check_page('user');
 	$DB->exec("update `pre_user` set `alipay_uid`=NULL where `uid`='$uid'");
 	@header('Content-Type: text/html; charset=UTF-8');
 	exit("<script language='javascript'>alert('您已成功解绑支付宝账号！');window.location.href='./editinfo.php';</script>");

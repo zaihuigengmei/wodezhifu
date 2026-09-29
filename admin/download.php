@@ -435,7 +435,7 @@ if($sheet == 'mybank'){
 	{
 		$i++;
 		$desc = $row['desc'] ? text_encoding($row['desc']) : $remark;
-		$data.=text_encoding($row['username']).','.$row['account'].','.($row['type']=='1'?'支付宝':'').',,'.$row['money'].','.$desc."\r\n";
+		$data.=csv_text($row['username']).','.csv_text($row['account']).','.csv_text($row['type']=='1'?'支付宝':'').','.csv_text('').','.csv_text($row['money']).','.csv_text($desc)."\r\n";
 	}
 
 }elseif($sheet == 'alipay'){
@@ -447,7 +447,7 @@ if($sheet == 'mybank'){
 	{
 		$i++;
 		$desc = $row['desc'] ? text_encoding($row['desc']) : $remark;
-		$data.=$i.','.$row['account'].','.text_encoding($row['username']).','.$row['money'].','.$desc."\r\n";
+		$data.=csv_text($i).','.csv_text($row['account']).','.csv_text($row['username']).','.csv_text($row['money']).','.csv_text($desc)."\r\n";
 	}
 
 }elseif($sheet == 'wxpay'){
@@ -464,7 +464,7 @@ if($sheet == 'mybank'){
 	{
 		$i++;
 		$desc = $row['desc'] ? text_encoding($row['desc']) : $remark;
-		$table.=$batch.$i.','.$row['account'].','.text_encoding($row['username']).',,'.$row['money'].','.$desc."\r\n";
+		$table.=csv_text($batch.$i).','.csv_text($row['account']).','.csv_text($row['username']).','.csv_text('').','.csv_text($row['money']).','.csv_text($desc)."\r\n";
 		$allmoney+=$row['money'];
 	}
 
@@ -488,7 +488,7 @@ if($sheet == 'mybank'){
 		{
 			$i++;
 			$desc = $row['desc'] ? text_encoding($row['desc']) : $remark;
-			$data.=$i.','.$row['account'].','.text_encoding($row['username']).','.$row['money'].','.$desc."\r\n";
+			$data.=csv_text($i).','.csv_text($row['account']).','.csv_text($row['username']).','.csv_text($row['money']).','.csv_text($desc)."\r\n";
 		}
 	}else{
 		$data="序号,转账方式,收款账号,收款人姓名,转账金额（元）,转账时间,转账备注,状态,失败原因\r\n";
@@ -498,7 +498,7 @@ if($sheet == 'mybank'){
 		{
 			$i++;
 			$desc = $row['desc'] ? text_encoding($row['desc']) : $remark;
-			$data.=$i.','.$type_name[$row['type']].','.$row['account'].','.text_encoding($row['username']).','.$row['money'].','.$row['addtime'].','.$desc.','.$status_arr[$row['status']].','.$row['result']."\r\n";
+			$data.=csv_text($i).','.csv_text($type_name[$row['type']]).','.csv_text($row['account']).','.csv_text($row['username']).','.csv_text($row['money']).','.csv_text($row['addtime']).','.csv_text($desc).','.csv_text($status_arr[$row['status']]).','.csv_text($row['result'])."\r\n";
 		}
 	}
 }
