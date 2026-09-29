@@ -113,7 +113,7 @@ if($step==3){
             $sqls=explode(';', $sqls);
             $sqls[]="INSERT INTO `".$dbqz."_config` VALUES ('syskey', '".random(32)."')";
             $sqls[]="INSERT INTO `".$dbqz."_config` VALUES ('build', '".date("Y-m-d")."')";
-            $sqls[]="INSERT INTO `".$dbqz."_config` VALUES ('cronkey', '".rand(111111,999999)."')";
+            $sqls[]="INSERT INTO `".$dbqz."_config` VALUES ('cronkey', '".bin2hex(random_bytes(32))."')";
             $success=0;$error=0;$errorMsg=null;
             foreach ($sqls as $value) {
                 $value=trim($value);

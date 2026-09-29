@@ -166,8 +166,10 @@ case 'iptype':
 break;
 
 case 'setArticle': //文章状态
-	$id=intval($_GET['id']);
-	$active=intval($_GET['active']);
+	if($_SERVER['REQUEST_METHOD'] !== 'POST') exit('{"code":405,"msg":"Method Not Allowed"}');
+	$id=intval($_POST['id']);
+	$active=intval($_POST['active']);
+	if(!in_array($active, [0,1], true)) exit('{"code":-1,"msg":"状态不合法"}');
 	$DB->exec("update pre_article set active='$active' where id='{$id}'");
 	exit('{"code":0,"msg":"succ"}');
 break;

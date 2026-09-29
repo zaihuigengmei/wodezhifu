@@ -1854,26 +1854,28 @@ if($errmsg4){
 <div class="panel panel-primary">
 <div class="panel-heading"><h3 class="panel-title">计划任务列表</h3></div>
 <div class="panel-body">
+<?php $cron_url_base = 'http://127.0.0.1:8502/cron.php'; $cron_key_mask = substr($conf['cronkey'],0,6).'...'.substr($conf['cronkey'],-4); ?>
+<p>以下地址用于服务器 crontab/监控自动访问，页面仅脱敏展示密钥；完整密钥请在上方输入框查看或复制。</p>
 <p>订单统计任务（0点后访问一次即可）</p>
-<li class="list-group-item"><?php echo $siteurl?>cron.php?do=order&key=<?php echo $conf['cronkey']; ?></li>
+<li class="list-group-item"><?php echo $cron_url_base?>?do=order&key=<?php echo $cron_key_mask; ?></li>
 <br/>
 <p>自动生成结算任务（0点后访问一次即可）</p>
-<li class="list-group-item"><?php echo $siteurl?>cron.php?do=settle&key=<?php echo $conf['cronkey']; ?></li>
+<li class="list-group-item"><?php echo $cron_url_base?>?do=settle&key=<?php echo $cron_key_mask; ?></li>
 <br/>
 <p>订单异步通知重试任务<br/>（如果有订单出现通知失败的，可以通过此条任务自动重新通知，通知重试时间：1分钟，3分钟，20分钟，1小时，2小时）</p>
-<li class="list-group-item"><?php echo $siteurl?>cron.php?do=notify&key=<?php echo $conf['cronkey']; ?></li>
+<li class="list-group-item"><?php echo $cron_url_base?>?do=notify&key=<?php echo $cron_key_mask; ?></li>
 <?php if($DB->getColumn("SELECT count(*) from pre_psreceiver WHERE status=1")>0 || $conf['direct_settle_time']==1){ ?>
 <br/>
 <p>订单分账&延迟结算任务</p>
-<li class="list-group-item"><?php echo $siteurl?>cron.php?do=profitsharing&key=<?php echo $conf['cronkey']; ?></li><?php }?>
+<li class="list-group-item"><?php echo $cron_url_base?>?do=profitsharing&key=<?php echo $cron_key_mask; ?></li><?php }?>
 <?php if($conf['auto_check_sucrate']==1 || $conf['auto_check_channel']==1 || $conf['auto_check_complain']==1 || $conf['auto_check_payip']==1 || $conf['auto_check_payspeed']==1){ ?>
 <br/>
 <p>支付风控检测任务</p>
-<li class="list-group-item"><?php echo $siteurl?>cron.php?do=check&key=<?php echo $conf['cronkey']; ?></li><?php }?>
+<li class="list-group-item"><?php echo $cron_url_base?>?do=check&key=<?php echo $cron_key_mask; ?></li><?php }?>
 <?php if($conf['auto_settle_money']){ ?>
 <br/>
 <p>自动转账任务</p>
-<li class="list-group-item"><?php echo $siteurl?>cron.php?do=transfer&key=<?php echo $conf['cronkey']; ?></li><?php }?>
+<li class="list-group-item"><?php echo $cron_url_base?>?do=transfer&key=<?php echo $cron_key_mask; ?></li><?php }?>
 </div>
 </div>
 <?php

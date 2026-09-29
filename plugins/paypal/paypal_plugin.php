@@ -13,6 +13,15 @@ class paypal_plugin
 		return get_curl($url);
 	}
 
+
+	static private function paypalExpectedAmount($order, $channel){
+		$rate = !empty($channel['currency_rate']) ? $channel['currency_rate'] : 1;
+		return round($order['realmoney'] * $rate, 2);
+	}
+	static private function paypalCurrency($channel){
+		return strtoupper((string)($channel['currency_code'] ?: 'USD'));
+	}
+
 	static public $info = [
 		'name'        => 'paypal', //支付插件英文名称，需和目录名称一致，不能有重复
 		'showname'    => 'PayPal', //支付插件显示名称
@@ -152,7 +161,8 @@ class paypal_plugin
 			$out_trade_no = $captures['invoice_id'];
 			$buyer = $result['payer']['email_address'];
 
-			if($out_trade_no == TRADE_NO && epay_callback_money_match($amount, $order['realmoney']) && strtoupper((string)$captures['seller_receivable_breakdown']['gross_amount']['currency_code']) === 'USD'){
+			$currency = strtoupper((string)$captures['seller_receivable_breakdown']['gross_amount']['currency_code']);
+			if($out_trade_no == TRADE_NO && epay_callback_money_match($amount, self::paypalExpectedAmount($order, $channel)) && $currency === self::paypalCurrency($channel)){
 				processReturn($order, $trade_no, $buyer);
 			}else{
 				return ['type'=>'error','msg'=>'订单信息校验失败'];
@@ -197,8 +207,13 @@ class paypal_plugin
 
 		$resource = $arr['resource'];
 		$amount = $resource['amount']['value'];
+		$currency = strtoupper((string)$resource['amount']['currency_code']);
 		$trade_no = $resource['id'];
-		$out_trade_no = $resource['invoice_id'];
+		$out_trade_no = !empty($resource['invoice_id']) ? $resource['invoice_id'] : ($resource['custom_id'] ?? '');
+		if($out_trade_no != TRADE_NO) exit('订单号校验失败');
+		if(!epay_callback_money_match($amount, self::paypalExpectedAmount($order, $channel)) || $currency !== self::paypalCurrency($channel)) exit('订单金额或币种校验失败');
+		processNotify($order, $trade_no);
+		exit('success');
 	}
 
 	//退款

@@ -20,6 +20,20 @@ function admin_safe_date($value){
 }
 
 
+function admin_safe_token($value, $name='参数'){
+	$value = trim((string)$value);
+	if($value === '' || !preg_match('/^[a-zA-Z0-9_.:-]{1,128}$/', $value)) exit('{"code":-1,"msg":"'.$name.'不合法"}');
+	return $value;
+}
+function admin_safe_text($value, $max=128){
+	$value = trim((string)$value);
+	if(strlen($value) > $max * 3) exit('{"code":-1,"msg":"文本过长"}');
+	return daddslashes($value);
+}
+function admin_html($value){
+	return htmlspecialchars((string)$value, ENT_QUOTES, 'UTF-8');
+}
+
 switch($act){
 case 'userList':
 	$usergroup = [0=>'默认用户组'];
@@ -141,8 +155,8 @@ case 'record_stats':
 break;
 
 case 'userPayStat':
-	$startday = trim($_POST['startday']);
-	$endday = trim($_POST['endday']);
+	$startday = admin_safe_date($_POST['startday']);
+	$endday = admin_safe_date($_POST['endday']);
 	$method = trim($_POST['method']);
 	$type = intval($_POST['type']);
 	if(!$startday || !$endday)exit(json_encode(['code'=>0, 'msg'=>'no day']));
@@ -236,8 +250,8 @@ case 'userPayStat':
 break;
 
 case 'userTransferStat':
-	$startday = trim($_POST['startday']);
-	$endday = trim($_POST['endday']);
+	$startday = admin_safe_date($_POST['startday']);
+	$endday = admin_safe_date($_POST['endday']);
 	$method = trim($_POST['method']);
 	if(!$startday || !$endday)exit(json_encode(['code'=>0, 'msg'=>'no day']));
 	$data = [];
@@ -286,8 +300,8 @@ case 'userTransferStat':
 break;
 
 case 'buyerStat':
-	$startday = trim($_POST['startday']);
-	$endday = trim($_POST['endday']);
+	$startday = admin_safe_date($_POST['startday']);
+	$endday = admin_safe_date($_POST['endday']);
 	$method = intval($_POST['method']);
 	if($method == '2') $column = 'mobile';
 	else if($method == '1') $column = 'ip';
@@ -329,8 +343,9 @@ case 'domainList':
 		$uid = intval($_POST['uid']);
 		$sql.=" AND `uid`='$uid'";
 	}
-	if(isset($_POST['kw']) && !empty($_POST['kw'])) {
-		$sql.=" AND `domain`='{$_POST['kw']}'";
+	if(isset($_POST['kw']) && $_POST['kw'] !== '') {
+		$kw = admin_safe_text($_POST['kw'], 128);
+		$sql.=" AND `domain`='{$kw}'";
 	}
 	if(isset($_POST['dstatus']) && $_POST['dstatus']>-1) {
 		$dstatus = intval($_POST['dstatus']);
@@ -346,8 +361,9 @@ break;
 
 case 'blackList':
 	$sql=" 1=1";
-	if(isset($_POST['kw']) && !empty($_POST['kw'])) {
-		$sql.=" AND `content`='{$_POST['kw']}'";
+	if(isset($_POST['kw']) && $_POST['kw'] !== '') {
+		$kw = admin_safe_text($_POST['kw'], 128);
+		$sql.=" AND `content`='{$kw}'";
 	}
 	if(isset($_POST['type']) && $_POST['type']>-1) {
 		$type = intval($_POST['type']);
@@ -578,7 +594,8 @@ case 'setUserGroup':
 	else exit('{"code":-1,"msg":"修改用户失败['.$DB->error().']"}');
 break;
 case 'resetUser':
-	$uid=intval($_GET['uid']);
+	if($_SERVER['REQUEST_METHOD'] !== 'POST') exit('{"code":405,"msg":"Method Not Allowed"}');
+	$uid=intval($_POST['uid']);
 	$key = random(32);
 	$sql = "UPDATE pre_user SET `key`='$key' WHERE uid='$uid'";
 	if($DB->exec($sql)!==false)exit('{"code":0,"msg":"重置密钥成功","key":"'.$key.'"}');
@@ -746,37 +763,44 @@ case 'subChannelInfo':
 	$row=$DB->getRow("SELECT * FROM pre_channel WHERE id='{$subrow['channel']}'");
 	if(!$row)
 		exit('{"code":-1,"msg":"当前子通道对应支付通道不存在！"}');
-	$typename = $DB->getColumn("SELECT name FROM pre_type WHERE id='{$row['type']}'");
 	$plugin = \lib\Plugin::getConfig($row['plugin']);
 	if(!$plugin)
 		exit('{"code":-1,"msg":"当前支付插件不存在！"}');
 
-	$info = json_decode($subrow['info'], true);
-	$config = json_decode($row['config'],true);
+	$info = json_decode($subrow['info'], true) ?: [];
+	$config = json_decode($row['config'],true) ?: [];
 	$data = '<div class="modal-body"><form class="form" id="form-info">';
 	foreach($plugin['inputs'] as $key=>$input){
-		if(substr($config[$key],0,1)=='['){
+		if(isset($config[$key]) && substr($config[$key],0,1)=='['){
 			$key = substr($config[$key],1,-1);
-			if($input['type'] == 'textarea'){
-				$data .= '<div class="form-group"><label>'.$input['name'].'：</label><br/><textarea id="'.$key.'" name="info['.$key.']" rows="2" class="form-control" placeholder="'.$input['note'].'">'.$info[$key].'</textarea></div>';
-			}elseif($input['type'] == 'select'){
+			if(!preg_match('/^[a-zA-Z0-9_.:-]{1,64}$/', $key)) continue;
+			$name = admin_html($input['name'] ?? $key);
+			$note = admin_html($input['note'] ?? '');
+			$value = admin_html($info[$key] ?? '');
+			$key_html = admin_html($key);
+			if(($input['type'] ?? '') == 'textarea'){
+				$data .= '<div class="form-group"><label>'.$name.'：</label><br/><textarea id="'.$key_html.'" name="info['.$key_html.']" rows="2" class="form-control" placeholder="'.$note.'">'.$value.'</textarea></div>';
+			}elseif(($input['type'] ?? '') == 'select'){
 				$addOptions = '';
-				foreach($input['options'] as $k=>$v){
-					$addOptions.='<option value="'.$k.'" '.($info[$key]==$k?'selected':'').'>'.$v.'</option>';
+				foreach(($input['options'] ?? []) as $k=>$v){
+					$k_html = admin_html($k);
+					$v_html = admin_html($v);
+					$addOptions.='<option value="'.$k_html.'" '.(($info[$key] ?? null)==$k?'selected':'').'>'.$v_html.'</option>';
 				}
-				$data .= '<div class="form-group"><label>'.$input['name'].'：</label><br/><select class="form-control" name="info['.$key.']" default="'.$info[$key].'">'.$addOptions.'</select></div>';
+				$data .= '<div class="form-group"><label>'.$name.'：</label><br/><select class="form-control" name="info['.$key_html.']" default="'.$value.'">'.$addOptions.'</select></div>';
 			}else{
-				$data .= '<div class="form-group"><label>'.$input['name'].'：</label><br/><input type="text" id="'.$key.'" name="info['.$key.']" value="'.$info[$key].'" class="form-control" placeholder="'.$input['note'].'"/></div>';
+				$data .= '<div class="form-group"><label>'.$name.'：</label><br/><input type="text" id="'.$key_html.'" name="info['.$key_html.']" value="'.$value.'" class="form-control" placeholder="'.$note.'"/></div>';
 			}
 		}
 	}
 
-	$data .= '<button type="button" id="save" onclick="saveInfo('.$id.')" class="btn btn-primary btn-block">保存</button></form></div>';
+	$data .= '<button type="button" id="save" onclick="saveInfo('.intval($id).')" class="btn btn-primary btn-block">保存</button></form></div>';
 	$result=array("code"=>0,"msg"=>"succ","data"=>$data);
 	exit(json_encode($result));
 break;
 case 'saveSubChannelInfo':
-	$id=intval($_GET['id']);
+	if($_SERVER['REQUEST_METHOD'] !== 'POST') exit('{"code":405,"msg":"Method Not Allowed"}');
+	$id=intval($_POST['id']);
 	$info=$_POST['info'];
 	$info = $info ? json_encode($info) : null;
 	if($DB->update('subchannel', ['info'=>$info], ['id'=>$id])!==false)exit('{"code":0,"msg":"修改自定义支付参数成功！"}');
@@ -802,10 +826,11 @@ case 'delBlack':
 	else exit('{"code":-1,"msg":"删除失败['.$DB->error().']"}');
 break;
 case 'batchdelBlack':
-	$checkbox=$_POST['checkbox'];
+	$checkbox=is_array($_POST['checkbox'])?$_POST['checkbox']:[];
+	$ids = array_filter(array_map('intval', $checkbox), function($v){ return $v > 0; });
 	$i = 0;
-	if(!empty($checkbox)){
-		$i = $DB->exec("DELETE FROM pre_blacklist WHERE id IN (".implode(',',$checkbox).")");
+	if(!empty($ids)){
+		$i = $DB->exec("DELETE FROM pre_blacklist WHERE id IN (".implode(',',$ids).")");
 	}
 	exit('{"code":0,"msg":"成功删除了'.$i.'个黑名单"}');
 break;

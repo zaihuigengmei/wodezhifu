@@ -452,6 +452,7 @@ if($sheet == 'mybank'){
 	}
 
 }elseif($sheet == 'wxpay'){
+	$batch = 'B'.date('YmdHis').random(6);
 	if(!$conf['transfer_wxpay'])sysmsg("未开启微信企业付款");
 	$channel = \lib\Channel::get($conf['transfer_wxpay']);
 	if(!$channel)sysmsg("当前支付通道信息不存在");

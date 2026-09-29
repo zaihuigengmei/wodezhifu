@@ -276,8 +276,9 @@ function showKey(uid,key){
 			showKey(uid,key);return;
 		}
 		$.ajax({
-			type : 'GET',
-			url : 'ajax_user.php?act=resetUser&uid='+uid,
+			type : 'POST',
+			url : 'ajax_user.php?act=resetUser',
+			data : {uid:uid},
 			dataType : 'json',
 			success : function(data) {
 				if(data.code == 0){

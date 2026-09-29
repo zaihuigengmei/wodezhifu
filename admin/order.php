@@ -695,9 +695,9 @@ function setStatus(trade_no, status) {
 function setStatusDo(trade_no, status) {
 	var ii = layer.load(2, {shade:[0.1,'#fff']});
 	$.ajax({
-		type : 'get',
-		url : 'ajax_order.php',
-		data : 'act=setStatus&trade_no=' + trade_no + '&status=' + status,
+		type : 'POST',
+		url : 'ajax_order.php?act=setStatus',
+		data : {trade_no: trade_no, status: status},
 		dataType : 'json',
 		success : function(ret) {
 			layer.close(ii);

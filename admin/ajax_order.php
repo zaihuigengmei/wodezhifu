@@ -197,8 +197,11 @@ case 'riskList':
 break;
 
 case 'setStatus': //改变订单状态
-	$trade_no=trim($_GET['trade_no']);
-	$status=is_numeric($_GET['status'])?intval($_GET['status']):exit('{"code":200}');
+	if($_SERVER['REQUEST_METHOD'] !== 'POST') exit('{"code":405,"msg":"Method Not Allowed"}');
+	$trade_no=trim($_POST['trade_no']);
+	if(!preg_match('/^[a-zA-Z0-9_.:-]{1,64}$/', $trade_no)) exit('{"code":400,"msg":"订单号不合法"}');
+	$status=is_numeric($_POST['status'])?intval($_POST['status']):exit('{"code":200}');
+	if(!in_array($status, [0,1,2,3,4,5], true)) exit('{"code":400,"msg":"状态不合法"}');
 	if($status==5){
 		if($DB->exec("DELETE FROM pre_order WHERE trade_no='$trade_no'"))
 			exit('{"code":200}');
@@ -371,6 +374,7 @@ case 'alipayPreAuthPay': //支付宝授权资金支付
 		$api_trade_no = $result['trade_no'];
 		$buyer_id = $result['buyer_user_id'];
 		$total_amount = $result['total_amount'];
+		if(!epay_callback_money_match($total_amount, $order['realmoney'])) exit('{"code":-1,"msg":"授权资金支付金额校验失败"}');
 		processNotify($order, $api_trade_no, $buyer_id);
 
 		exit('{"code":0,"msg":"授权资金支付成功！"}');

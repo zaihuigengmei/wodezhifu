@@ -824,7 +824,7 @@ function saveInfo(id){
 	var ii = layer.load(2, {shade:[0.1,'#fff']});
 	$.ajax({
 		type : 'POST',
-		url : 'ajax_user.php?act=saveSubChannelInfo&id='+id,
+		url : 'ajax_user.php?act=saveSubChannelInfo',
 		data : $("#form-info").serialize(),
 		dataType : 'json',
 		success : function(data) {
