@@ -28,6 +28,7 @@ $app = isset($_GET['app'])?$_GET['app']:'alipay';
 
 if(isset($_POST['submit'])){
 	if(!checkRefererHost())exit();
+	csrf_check_page('user');
 	$out_biz_no = trim($_POST['out_biz_no']);
 	$payee_account = htmlspecialchars(trim($_POST['payee_account']));
 	$payee_real_name = htmlspecialchars(trim($_POST['payee_real_name']));
@@ -100,6 +101,7 @@ if(isset($_GET['copy'])){
 			<div class="tab-pane active" id="alipay">
           <form action="?app=<?php echo $app?>" method="POST" role="form">
 			<input type="hidden" name="type" value="<?php echo $app?>"/>
+			<input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(csrf_token('user'), ENT_QUOTES, 'UTF-8')?>"/>
 			<input type="hidden" name="rate" value="<?php echo $conf['transfer_rate']?>"/>
 			<div class="form-group">
 				<div class="input-group"><div class="input-group-addon">交易号</div>

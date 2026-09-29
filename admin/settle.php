@@ -180,10 +180,10 @@ function completeBatch(batch){
 }
 function download_csv(batch){
 	var paymsg = '';
-	paymsg+='<a class="btn btn-default btn-block" href="download.php?act=settle&batch='+batch+'" style="margin-top:10px;">结算信息汇总表格</a>';
-	paymsg+='<a class="btn btn-default btn-block" href="download.php?act=settle&type=alipay&batch='+batch+'" style="margin-top:10px;">支付宝批量付款表格</a>';
-	paymsg+='<a class="btn btn-default btn-block" href="download.php?act=settle&type=mybank&batch='+batch+'" style="margin-top:10px;">网商银行批量转账表格</a>';
-	paymsg+='<a class="btn btn-default btn-block" href="download.php?act=settle&type=wxpay&batch='+batch+'" style="margin-top:10px;">微信批量转账到零钱表格</a>';
+	paymsg+='<a class="btn btn-default btn-block" href="download.php?act=settle&csrf_token=<?php echo csrf_token('admin')?>&batch='+batch+'" style="margin-top:10px;">结算信息汇总表格</a>';
+	paymsg+='<a class="btn btn-default btn-block" href="download.php?act=settle&csrf_token=<?php echo csrf_token('admin')?>&type=alipay&batch='+batch+'" style="margin-top:10px;">支付宝批量付款表格</a>';
+	paymsg+='<a class="btn btn-default btn-block" href="download.php?act=settle&csrf_token=<?php echo csrf_token('admin')?>&type=mybank&batch='+batch+'" style="margin-top:10px;">网商银行批量转账表格</a>';
+	paymsg+='<a class="btn btn-default btn-block" href="download.php?act=settle&csrf_token=<?php echo csrf_token('admin')?>&type=wxpay&batch='+batch+'" style="margin-top:10px;">微信批量转账到零钱表格</a>';
 	layer.alert('<center>'+paymsg+'<hr><a class="btn btn-default btn-block" onclick="layer.closeAll()">关闭</a></center>',{
 		btn:[],
 		title:'请选择CSV表格模板',

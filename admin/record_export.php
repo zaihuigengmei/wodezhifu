@@ -50,7 +50,7 @@ function exportRecord(){
 	if(starttime == '' || endtime == ''){
 		layer.alert('时间范围是必填的！'); return false;
 	}
-	window.location.href='./download.php?act=record&starttime='+starttime+'&endtime='+endtime+'&uid='+uid+'&type='+type;
+	window.location.href='./download.php?act=record&csrf_token=<?php echo csrf_token('admin')?>&starttime='+starttime+'&endtime='+endtime+'&uid='+uid+'&type='+type;
 	return false;
 }
 $(document).ready(function(){

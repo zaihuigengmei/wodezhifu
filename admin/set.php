@@ -1942,7 +1942,7 @@ elseif($mod=='proxy'){
 <span class="glyphicon glyphicon-info-sign"></span>
 本功能开启后，在支付成功异步回调的时候，使用中转代理访问商户网站，可解决一些只能国内访问的网站回调问题，也可以防止本站服务器IP泄露。<br/>
 <li>代理服务器可以使用Windows服务器+CCProxy软件搭建</li>
-<li>代理API可<a href="download.php?act=proxyapi&apikey=<?php echo $conf['proxy_apikey']?>">下载代理API源码</a>，自行搭建代理API站点对接使用。若修改API接口密钥，则需要重新下载！</li>
+<li>代理API可<a href="download.php?act=proxyapi&csrf_token=<?php echo csrf_token('admin')?>&apikey=<?php echo $conf['proxy_apikey']?>">下载代理API源码</a>，自行搭建代理API站点对接使用。若修改API接口密钥，则需要重新下载！</li>
 </div>
 </div>
 <script>

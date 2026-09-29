@@ -5,6 +5,7 @@ if($islogin==1){}else exit("<script language='javascript'>window.location.href='
 if(isset($_POST['action'])){
 	if(!$islogin) exit(json_encode(['code'=>-1, 'msg'=>'未登录']));
 	if(!checkRefererHost()) exit(json_encode(['code'=>403, 'msg'=>'Forbidden']));
+	csrf_check_json('admin');
 	if($_POST['action'] == 'generate'){
 		try {
 			$totp = \lib\TOTP::create();

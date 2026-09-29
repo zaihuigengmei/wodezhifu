@@ -126,7 +126,7 @@ function exportTable(){
 	if(startday == '' || endday == ''){
 		layer.alert('查询日期不能为空');return false;
 	}
-	window.location.href='./download.php?act=ustat&startday='+startday+'&endday='+endday+'&method='+method+'&type='+type;
+	window.location.href='./download.php?act=ustat&csrf_token=<?php echo csrf_token('admin')?>&startday='+startday+'&endday='+endday+'&method='+method+'&type='+type;
 }
 
 $(document).ready(function(){

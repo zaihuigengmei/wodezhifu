@@ -51,7 +51,7 @@ function exportUser(){
 	var type = $("select[name='type']").val();
 	var dstatus = $("select[name='dstatus']").val();
 	var sheet = $("select[name='sheet']").val();
-	window.location.href='./download.php?act=transfer&starttime='+starttime+'&endtime='+endtime+'&uid='+uid+'&type='+type+'&dstatus='+dstatus+'&sheet='+sheet;
+	window.location.href='./download.php?act=transfer&csrf_token=<?php echo csrf_token('admin')?>&starttime='+starttime+'&endtime='+endtime+'&uid='+uid+'&type='+type+'&dstatus='+dstatus+'&sheet='+sheet;
 	return false;
 }
 $(document).ready(function(){

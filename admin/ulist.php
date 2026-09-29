@@ -541,7 +541,7 @@ function exportUser(){
 	var endtime = $("#exportUser input[name='endtime']").val();
 	var gid = $("#exportUser select[name='gid']").val();
 	var dstatus = $("#exportUser select[name='dstatus']").val();
-	window.location.href='./download.php?act=user&starttime='+starttime+'&endtime='+endtime+'&gid='+gid+'&dstatus='+dstatus;
+	window.location.href='./download.php?act=user&csrf_token=<?php echo csrf_token('admin')?>&starttime='+starttime+'&endtime='+endtime+'&gid='+gid+'&dstatus='+dstatus;
 	return false;
 }
 </script>

@@ -3,6 +3,7 @@ include("../includes/common.php");
 
 if($islogin==1){}else exit("<script language='javascript'>window.location.href='./login.php';</script>");
 if(!checkRefererHost()) exit('Forbidden');
+csrf_check_page('admin');
 
 $act=isset($_GET['act'])?trim($_GET['act']):null;
 $allowed_acts = ['settle','ustat','order','user','record','transfer','complain','wximg','proxyapi'];
@@ -379,7 +380,7 @@ $file="ID,商户号,操作类型,变更类型,变更金额,变更前金额,变�
 
 $rs = $DB->query("SELECT * FROM pre_record WHERE{$sql} order by id desc limit 100000");
 while($row = $rs->fetch()){
-	$file.=$row['id'].','.$row['uid'].','.text_encoding($row['type']).','.($row['action']==2?'-':'+').','.$row['money'].','.$row['oldmoney'].','.$row['newmoney'].','.$row['date'].',="'.$row['trade_no']."\"\r\n";
+	$file .= csv_text($row['id']).','.csv_text($row['uid']).','.csv_text(text_encoding($row['type'])).','.csv_text($row['action']==2?'-':'+').','.csv_text($row['money']).','.csv_text($row['oldmoney']).','.csv_text($row['newmoney']).','.csv_text($row['date']).','.csv_text($row['trade_no'])."\r\n";
 }
 
 $file = hex2bin('efbbbf').$file;
