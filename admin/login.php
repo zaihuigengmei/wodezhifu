@@ -37,7 +37,10 @@ function admin_totp_verify_once($code, $secret, $ip){
 }
 
 if(isset($_GET['act']) && $_GET['act']=='login'){
-  if(!checkRefererHost())exit('{"code":403}');
+  if(!checkRefererHost()){
+    http_response_code(403);
+    exit(json_encode(['code'=>403, 'msg'=>'登录请求来源校验失败，请确认浏览器未禁用同站 Referer，并检查域名反代的 Host 设置']));
+  }
   unset($_SESSION['admin_totp_challenge']);
   $username = trim($_POST['username']);
   $password = trim($_POST['password']);
@@ -94,7 +97,10 @@ if(isset($_GET['act']) && $_GET['act']=='login'){
     }
   }
 }elseif(isset($_GET['act']) && $_GET['act']=='totp'){
-  if(!checkRefererHost())exit('{"code":403}');
+  if(!checkRefererHost()){
+    http_response_code(403);
+    exit(json_encode(['code'=>403, 'msg'=>'登录请求来源校验失败，请确认浏览器未禁用同站 Referer，并检查域名反代的 Host 设置']));
+  }
   $pending = $_SESSION['admin_totp_challenge'] ?? null;
   $submitted = $_POST['challenge'] ?? null;
   if(!is_array($pending) || $pending['expires'] < time() || $pending['ip'] !== $clientip || $pending['attempts'] >= 5 || !is_string($submitted) || !hash_equals($pending['token'], $submitted) || !hash_equals($pending['credential'], hash('sha256', $conf['admin_user'].$conf['admin_pwd'].$conf['totp_secret']))){
