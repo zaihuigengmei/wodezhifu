@@ -6,6 +6,12 @@ $is_defend=true;
 include("../includes/common.php");
 
 if(isset($_GET['logout'])){
+	if($_SERVER['REQUEST_METHOD'] !== 'POST'){
+		header('Allow: POST');
+		http_response_code(405);
+		exit('Method Not Allowed');
+	}
+	csrf_check_page('user');
 	if(!checkRefererHost())exit();
 	epay_delete_cookie("user_token", "/user");
 	@header('Content-Type: text/html; charset=UTF-8');

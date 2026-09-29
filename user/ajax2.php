@@ -1279,7 +1279,9 @@ case 'transfer_result':
 	exit(json_encode($result));
 break;
 case 'transfer_query':
-	$biz_no=user_safe_token($_GET['biz_no'], '付款单号');
+	if($_SERVER['REQUEST_METHOD'] !== 'POST') exit('{"code":405,"msg":"Method Not Allowed"}');
+	if(!isset($_POST['csrf_token']) || !is_string($_POST['csrf_token']) || !hash_equals(csrf_token('user'), $_POST['csrf_token'])) exit('{"code":403,"msg":"CSRF TOKEN ERROR"}');
+	$biz_no=user_safe_token($_POST['biz_no'] ?? '', '付款单号');
 	if(!$DB->find('transfer', 'biz_no', ['biz_no'=>$biz_no, 'uid'=>$uid])) exit('{"code":-1,"msg":"当前付款记录不存在！"}');
 	$result = \lib\Transfer::status($biz_no);
 	exit(json_encode($result));

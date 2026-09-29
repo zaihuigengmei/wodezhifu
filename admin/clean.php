@@ -11,9 +11,12 @@ if($islogin==1){}else exit("<script language='javascript'>window.location.href='
     <div class="col-xs-12 col-sm-10 col-lg-8 center-block" style="float: none;">
 <?php
 $mod=isset($_GET['mod'])?$_GET['mod']:null;
-$dangerMods = ['cleanorder','cleansettle','cleanrecord','cleanorderi','cleansettlei','cleanrecordi','cleantransferi','cleanpsorderi','cleanlogi'];
-if(in_array($mod, $dangerMods, true) && !checkRefererHost())exit();
-if(in_array($mod, $dangerMods, true)) csrf_check_page('admin');
+$dangerMods = ['cleancache','cleanorder','cleansettle','cleanrecord','cleanorderi','cleansettlei','cleanrecordi','cleantransferi','cleanpsorderi','cleanlogi'];
+if(in_array($mod, $dangerMods, true)) {
+    if($_SERVER['REQUEST_METHOD'] !== 'POST') { http_response_code(405); exit('Method Not Allowed'); }
+    if(!checkRefererHost())exit();
+    csrf_check_page('admin');
+}
 if($mod=='cleancache'){
 $CACHE->clear();
 if(function_exists("opcache_reset"))@opcache_reset();
@@ -71,10 +74,9 @@ showmsg('删除登录记录成功！',1);
 <div class="panel panel-primary">
 <div class="panel-heading"><h3 class="panel-title">系统数据清理</h3></div>
 <div class="panel-body">
-<a href="./clean.php?mod=cleancache" class="btn btn-block btn-default">清理设置缓存</a><br/>
-<a href="./clean.php?mod=cleanorder&csrf_token=<?php echo urlencode(csrf_token('admin'))?>" onclick="return confirm('你确实要删除30天前的订单记录吗？');" class="btn btn-block btn-default">删除30天前订单记录</a><br/>
-<a href="./clean.php?mod=cleansettle&csrf_token=<?php echo urlencode(csrf_token('admin'))?>" onclick="return confirm('你确实要删除30天前的结算记录吗？');" class="btn btn-block btn-default">删除30天前结算记录</a><br/>
-<a href="./clean.php?mod=cleanrecord&csrf_token=<?php echo urlencode(csrf_token('admin'))?>" onclick="return confirm('你确实要删除30天前的资金明细吗？');" class="btn btn-block btn-default">删除30天前资金明细</a><br/>
+<?php foreach (['cleancache'=>'清理设置缓存','cleanorder'=>'删除30天前订单记录','cleansettle'=>'删除30天前结算记录','cleanrecord'=>'删除30天前资金明细'] as $action=>$label) { ?>
+<form action="./clean.php?mod=<?php echo $action?>" method="post"><input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(csrf_token('admin'), ENT_QUOTES, 'UTF-8')?>"/><button type="submit" class="btn btn-block btn-default" <?php if($action!=='cleancache'){ ?>onclick="return confirm('删除后无法恢复，确定继续吗？');"<?php } ?>><?php echo $label?></button></form><br/>
+<?php } ?>
 <h4>自定义清理：</h4>
 <form action="./clean.php?mod=cleanorderi" method="post" role="form"><input type="hidden" name="do" value="submit"/><input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(csrf_token('admin'), ENT_QUOTES, 'UTF-8')?>"/>
 <b>订单记录</b>：<input type="text" name="days" value="" placeholder="天数"/>天前的订单记录&nbsp;<input type="submit" name="submit" value="立即删除" class="btn btn-sm btn-danger" onclick="return confirm('删除后无法恢复，确定继续吗？');"/>

@@ -14,6 +14,7 @@ if(isset($_GET['sid'])){
 session_start();
 if(isset($_GET['sid']) && (!is_string($_GET['bridge'] ?? null) || empty($_SESSION['oauth_bridge']) || !hash_equals($_SESSION['oauth_bridge'], $_GET['bridge']))) exit('Access Denied');
 if(empty($_SESSION['oauth_bridge'])) $_SESSION['oauth_bridge'] = bin2hex(random_bytes(32));
+if(isset($_GET['unbind'])){ http_response_code(405); exit('Method Not Allowed'); }
 if($islogin2==1 && !isset($_GET['auth_code']) && !isset($_GET['act']) && !isset($_GET['unbind'])){
     $bindStart = $_SESSION['oauth_bind_start'] ?? null;
     if(!is_array($bindStart) || $bindStart['actor'] !== (string)$uid || $bindStart['provider'] !== 'alipay' || $bindStart['expires'] < time()) exit('请从账户设置发起绑定');
@@ -107,8 +108,9 @@ if(isset($_GET['auth_code'])){
 		exit("<script language='javascript'>alert('请输入商户ID和密钥完成绑定和登录');window.location.href='./login.php?connect=true';</script>");
 	}
 
-}elseif($islogin2==1 && isset($_GET['unbind'])){
+}elseif($islogin2==1 && $_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['unbind'])){
 	if(!checkRefererHost())exit();
+	if(!isset($_POST['csrf_token'])) exit('CSRF TOKEN ERROR');
 	csrf_check_page('user');
 	$DB->exec("update `pre_user` set `alipay_uid`=NULL where `uid`='$uid'");
 	@header('Content-Type: text/html; charset=UTF-8');

@@ -3,16 +3,17 @@
  * QQ互联
 **/
 include("../includes/common.php");
-if($islogin2==1 && !isset($_GET['code']) && !isset($_GET['act']) && !isset($_GET['unbind']) && isset($_GET['bind'])){
+if($islogin2==1 && !isset($_GET['code']) && !isset($_GET['act']) && isset($_GET['bind'])){
     $bindStart = $_SESSION['oauth_bind_start'] ?? null;
     if(!is_array($bindStart) || $bindStart['actor'] !== (string)$uid || $bindStart['provider'] !== 'qq' || $bindStart['expires'] < time()) exit('请从账户设置发起绑定');
 }
 
+if(isset($_GET['unbind'])){ http_response_code(405); exit('Method Not Allowed'); }
 // Legacy qrlogin.php accepts a client-supplied qrsig and writes a shared,
 // timeless recovery slot, not a session/actor-bound authentication proof.
 // Do not consume it for login or binding; use official QQ OAuth (1/3).
 if((isset($_GET['act']) && $_GET['act']==='qrlogin') ||
-    ($conf['login_qq']==2 && !isset($_GET['code']) && !isset($_GET['unbind']))){
+    ($conf['login_qq']==2 && !isset($_GET['code']) && !($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['unbind'])))){
     unset($_SESSION['findpwd_qq']);
     header('Content-Type: application/json; charset=UTF-8');
     exit(json_encode(['code'=>-1, 'msg'=>'旧版QQ扫码登录已停用，请使用账号密码或联系管理员配置QQ官方/聚合OAuth登录']));
@@ -82,8 +83,9 @@ if($_GET['code'] && ($conf['login_qq']==1 || $conf['login_qq']==3 || $conf['logi
 		@header('Content-Type: text/html; charset=UTF-8');
 		exit("<script language='javascript'>alert('请输入商户ID和密钥完成绑定和登录');window.location.href='./login.php?connect=true';</script>");
 	}
-}elseif($islogin2==1 && isset($_GET['unbind'])){
+}elseif($islogin2==1 && $_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['unbind'])){
 	if(!checkRefererHost())exit();
+	if(!isset($_POST['csrf_token'])) exit('CSRF TOKEN ERROR');
 	csrf_check_page('user');
 	$DB->exec("update `pre_user` set `qq_uid`=NULL where `uid`='$uid'");
 	@header('Content-Type: text/html; charset=UTF-8');

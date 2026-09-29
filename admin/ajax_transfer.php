@@ -135,7 +135,9 @@ case 'statistics':
 break;
 
 case 'transfer_query':
-	$biz_no=admin_safe_token($_GET['biz_no'], '付款单号');
+	if($_SERVER['REQUEST_METHOD'] !== 'POST') exit('{"code":405,"msg":"Method Not Allowed"}');
+	if(!isset($_POST['csrf_token']) || !is_string($_POST['csrf_token']) || !hash_equals(csrf_token('admin'), $_POST['csrf_token'])) exit('{"code":403,"msg":"CSRF TOKEN ERROR"}');
+	$biz_no=admin_safe_token($_POST['biz_no'] ?? '', '付款单号');
 	$result = \lib\Transfer::status($biz_no);
 	exit(json_encode($result));
 break;

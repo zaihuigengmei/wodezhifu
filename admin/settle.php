@@ -77,8 +77,9 @@ function createBatch(){
 	}, function(){
 	var ii = layer.load(2, {shade:[0.1,'#fff']});
 	$.ajax({
-		type : 'GET',
+		type : 'POST',
 		url : 'ajax_settle.php?act=create_batch',
+		data : {csrf_token: window.EPAY_CSRF_TOKEN},
 		dataType : 'json',
 		success : function(data) {
 			layer.close(ii);

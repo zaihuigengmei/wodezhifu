@@ -10,6 +10,11 @@ csrf_check_json('admin');
 
 switch($act){
 case 'getcount':
+	if(($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST'){
+		http_response_code(405);
+		header('Allow: POST');
+		exit(json_encode(['code'=>405, 'msg'=>'统计刷新仅接受 POST 请求']));
+	}
 	$thtime=date("Y-m-d").' 00:00:00';
 	$count1=$DB->getColumn("SELECT count(*) from pre_order");
 	$count2=$DB->getColumn("SELECT count(*) from pre_user");

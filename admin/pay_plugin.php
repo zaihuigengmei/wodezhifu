@@ -12,13 +12,16 @@ if($islogin==1){}else exit("<script language='javascript'>window.location.href='
 <?php
 $my=isset($_GET['my'])?$_GET['my']:null;
 if($my=='refresh') {
+	if($_SERVER['REQUEST_METHOD'] !== 'POST') { http_response_code(405); exit('Method Not Allowed'); }
+	if(!checkRefererHost())exit();
+	csrf_check_page('admin');
 	\lib\Plugin::updateAll();
 	exit("<script language='javascript'>alert('刷新插件列表成功！');history.go(-1);</script>");
 }else{
 $list = \lib\Plugin::getAll();
 ?>
 <div class="panel panel-info">
-   <div class="panel-heading"><h3 class="panel-title">系统共有 <b><?php echo count($list);?></b> 个支付插件&nbsp;<span class="pull-right"><a href="./pay_plugin.php?my=refresh" class="btn btn-default btn-xs"><i class="fa fa-refresh"></i> 刷新插件列表</a></span></h3></div>
+   <div class="panel-heading"><h3 class="panel-title">系统共有 <b><?php echo count($list);?></b> 个支付插件&nbsp;<span class="pull-right"><form action="./pay_plugin.php?my=refresh" method="post" style="display:inline"><input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(csrf_token('admin'), ENT_QUOTES, 'UTF-8')?>"><button type="submit" class="btn btn-default btn-xs"><i class="fa fa-refresh"></i> 刷新插件列表</button></form></span></h3></div>
       <div class="table-responsive">
         <table class="table table-striped">
           <thead><tr><th>插件名称</th><th>插件描述</th><th>插件作者</th><th>包含的支付方式</th><th>包含的转账方式</th><th>分账</th></tr></thead>

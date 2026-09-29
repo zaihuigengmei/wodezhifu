@@ -73,6 +73,9 @@ case 'settleList':
 break;
 
 case 'create_batch':
+	if($_SERVER['REQUEST_METHOD'] !== 'POST') exit('{"code":405,"msg":"Method Not Allowed"}');
+	// Do not accept a CSRF token from the query string for this state-changing action.
+	if(!isset($_POST['csrf_token']) || !is_string($_POST['csrf_token']) || !hash_equals(csrf_token('admin'), $_POST['csrf_token'])) exit('{"code":403,"msg":"CSRF TOKEN ERROR"}');
 	$count=$DB->getColumn("SELECT count(*) from pre_settle where status=0");
 	if($count==0)exit('{"code":-1,"msg":"当前不存在待结算的记录"}');
 	$batch=date("Ymd").rand(111,999);

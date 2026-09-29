@@ -38,6 +38,11 @@ function getkm($len = 18)
 }
 
 $my=isset($_GET['my'])?$_GET['my']:null;
+if(in_array($my, ['add','del','qk2','qkuse2'], true)) {
+    if($_SERVER['REQUEST_METHOD'] !== 'POST') { http_response_code(405); exit('Method Not Allowed'); }
+    if(!checkRefererHost())exit();
+    csrf_check_page('admin');
+}
 
 if($my=='add'){
 if(!checkRefererHost())exit();
@@ -64,7 +69,7 @@ csrf_check_page('admin');
 echo '<div class="panel panel-primary">
 <div class="panel-heading w h"><h3 class="panel-title">删除邀请码</h3></div>
 <div class="panel-body box">';
-$id=isset($_GET['id'])?intval($_GET['id']):0;
+$id=isset($_POST['id'])?intval($_POST['id']):0;
 if($id<=0)showmsg('ID错误',3);
 $sql=$DB->delete('invitecode', ['id'=>$id]);
 if($sql){echo '删除成功！';}
@@ -73,12 +78,10 @@ echo '<hr/><a href="./invitecode.php">>>返回邀请码列表</a></div></div>';
 }
 
 elseif($my=='qk'){//清空邀请码
-if(!checkRefererHost())exit();
-csrf_check_page('admin');
 echo '<div class="panel panel-primary">
 <div class="panel-heading w h"><h3 class="panel-title">清空邀请码</h3></div>
 <div class="panel-body box">
-您确认要清空所有邀请码吗？清空后无法恢复！<br><a href="./invitecode.php?my=qk2&csrf_token='.urlencode(csrf_token('admin')).'">确认</a> | <a href="javascript:history.back();">返回</a></div></div>';
+您确认要清空所有邀请码吗？清空后无法恢复！<br><form action="./invitecode.php?my=qk2" method="post"><input type="hidden" name="csrf_token" value="'.htmlspecialchars(csrf_token('admin'), ENT_QUOTES, 'UTF-8').'"><button type="submit" class="btn btn-danger">确认</button> | <a href="./invitecode.php">返回</a></form></div></div>';
 }
 elseif($my=='qk2'){//清空邀请码结果
 if(!checkRefererHost())exit();
@@ -94,12 +97,10 @@ echo'<div class="box">清空失败.</div>';
 echo '<hr/><a href="./invitecode.php">>>返回邀请码列表</a></div></div>';
 }
 elseif($my=='qkuse'){//清空已使用邀请码
-if(!checkRefererHost())exit();
-csrf_check_page('admin');
 echo '<div class="panel panel-primary">
 <div class="panel-heading w h"><h3 class="panel-title">清空邀请码</h3></div>
 <div class="panel-body box">
-您确认要清空所有邀请码吗？清空后无法恢复！<br><a href="./invitecode.php?my=qkuse2&csrf_token='.urlencode(csrf_token('admin')).'">确认</a> | <a href="javascript:history.back();">返回</a></div></div>';
+您确认要清空所有已使用邀请码吗？清空后无法恢复！<br><form action="./invitecode.php?my=qkuse2" method="post"><input type="hidden" name="csrf_token" value="'.htmlspecialchars(csrf_token('admin'), ENT_QUOTES, 'UTF-8').'"><button type="submit" class="btn btn-danger">确认</button> | <a href="./invitecode.php">返回</a></form></div></div>';
 }
 elseif($my=='qkuse2'){//清空已使用邀请码结果
 if(!checkRefererHost())exit();
@@ -123,8 +124,8 @@ echo '<form action="invitecode.php" method="GET" class="form-inline">
     <input type="text" class="form-control" name="kw" placeholder="邀请码" required>
   </div>
   <button type="submit" class="btn btn-primary">搜索</button>
-  <a href="invitecode.php?my=qk&csrf_token='.urlencode(csrf_token('admin')).'" class="btn btn-danger">清空</a>
-  <a href="invitecode.php?my=qkuse&csrf_token='.urlencode(csrf_token('admin')).'" class="btn btn-danger">清空已使用</a>
+  <a href="invitecode.php?my=qk" class="btn btn-danger">清空</a>
+  <a href="invitecode.php?my=qkuse" class="btn btn-danger">清空已使用</a>
   <a href="#" data-toggle="modal" data-target="#search" id="search" class="btn btn-success">生成</a>
 </form>';
 
@@ -156,7 +157,7 @@ $offset=$pagesize*($page - 1);
 $rs=$DB->query("SELECT * FROM pre_invitecode WHERE{$sql} order by id desc limit $offset,$pagesize", $sqlbind);
 while($res = $rs->fetch())
 {
-echo '<tr><td><b>'.$res['code'].'</b></td><td>'.($res['status']==1?'<font color="red">已使用</font>':'<font color="green">未使用</font>').'</td><td>'.$res['addtime'].'</td><td>'.$res['usetime'].'</td><td><a href="./ulist.php?column=uid&value='.$res['uid'].'" target="_blank">'.$res['uid'].'</a></td><td><a href="./invitecode.php?my=del&id='.$res['id'].'&csrf_token='.urlencode(csrf_token('admin')).'" class="btn btn-xs btn-danger" onclick="return confirm(\'你确实要删除此邀请码吗？\');">删除</a></td></tr>';
+echo '<tr><td><b>'.$res['code'].'</b></td><td>'.($res['status']==1?'<font color="red">已使用</font>':'<font color="green">未使用</font>').'</td><td>'.$res['addtime'].'</td><td>'.$res['usetime'].'</td><td><a href="./ulist.php?column=uid&value='.$res['uid'].'" target="_blank">'.$res['uid'].'</a></td><td><form action="./invitecode.php?my=del" method="post"><input type="hidden" name="id" value="'.intval($res['id']).'"><input type="hidden" name="csrf_token" value="'.htmlspecialchars(csrf_token('admin'), ENT_QUOTES, 'UTF-8').'"><button type="submit" class="btn btn-xs btn-danger" onclick="return confirm(\'你确实要删除此邀请码吗？\');">删除</button></form></td></tr>';
 }
 ?>
           </tbody>

@@ -2,10 +2,12 @@
 include("../includes/common.php");
 
 if($islogin==1){}else exit("<script language='javascript'>window.location.href='./login.php';</script>");
+if($_SERVER['REQUEST_METHOD'] !== 'POST') { http_response_code(405); exit('Method Not Allowed'); }
 if(!checkRefererHost())exit();
 csrf_check_page('admin');
 
-$uid=intval($_GET['uid']);
+$uid=isset($_POST['uid'])?intval($_POST['uid']):0;
+if($uid<=0)sysmsg('用户ID错误！');
 
 $userrow=$DB->getRow("select * from pre_user where uid='$uid' limit 1");
 if(!$userrow)sysmsg('当前用户不存在！');

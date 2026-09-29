@@ -229,8 +229,9 @@ function showResult(biz_no) {
 function queryStatus(biz_no) {
 	var ii = layer.load(2, {shade:[0.1,'#fff']});
 	$.ajax({
-		type : 'GET',
-		url : 'ajax2.php?act=transfer_query&biz_no='+biz_no,
+		type : 'POST',
+		url : 'ajax2.php?act=transfer_query',
+		data : {biz_no:biz_no, csrf_token:window.EPAY_CSRF_TOKEN},
 		dataType : 'json',
 		success : function(data) {
 			layer.close(ii);

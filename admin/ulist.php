@@ -248,13 +248,27 @@ $(document).ready(function(){
 				field: '',
 				title: '操作',
 				formatter: function(value, row, index) {
-					return '<a href="./uset.php?my=edit&uid='+row.uid+'" class="btn btn-xs btn-info">编辑</a>&nbsp;<a href="./sso.php?uid='+row.uid+'&csrf_token=<?php echo urlencode(csrf_token('admin'))?>" target="_blank" class="btn btn-xs btn-success">登录</a>&nbsp;<a href="javascript:delUser('+row.uid+')" class="btn btn-xs btn-danger">删除</a><br/><a href="./order.php?uid='+row.uid+'" target="_blank" class="btn btn-xs btn-default">订单</a>&nbsp;<a href="./slist.php?uid='+row.uid+'" target="_blank" class="btn btn-xs btn-default">结算</a>&nbsp;<a href="./record.php?uid='+row.uid+'" target="_blank" class="btn btn-xs btn-default">明细</a>';
+					return '<a href="./uset.php?my=edit&uid='+row.uid+'" class="btn btn-xs btn-info">编辑</a>&nbsp;<a href="javascript:void(0)" onclick="ssoLogin('+row.uid+')" class="btn btn-xs btn-success">登录</a>&nbsp;<a href="javascript:delUser('+row.uid+')" class="btn btn-xs btn-danger">删除</a><br/><a href="./order.php?uid='+row.uid+'" target="_blank" class="btn btn-xs btn-default">订单</a>&nbsp;<a href="./slist.php?uid='+row.uid+'" target="_blank" class="btn btn-xs btn-default">结算</a>&nbsp;<a href="./record.php?uid='+row.uid+'" target="_blank" class="btn btn-xs btn-default">明细</a>';
 				}
 			},
 		],
 	})
 })
 
+function ssoLogin(uid){
+	var form = document.createElement('form');
+	form.method = 'post';
+	form.action = './sso.php';
+	form.target = '_blank';
+	[['uid', uid], ['csrf_token', <?php echo json_encode(csrf_token('admin'))?>]].forEach(function(field){
+		var input = document.createElement('input');
+		input.type = 'hidden'; input.name = field[0]; input.value = field[1];
+		form.appendChild(input);
+	});
+	document.body.appendChild(form);
+	form.submit();
+	form.remove();
+}
 function showKey(uid,key){
 	var clipboard;
 	var confirmobj = layer.confirm(key+'<input type="hidden" id="copyContent" value="'+key+'"/>', {

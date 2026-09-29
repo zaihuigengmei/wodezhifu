@@ -15,7 +15,8 @@ if(isset($_GET['sid'])){
 session_start();
 if(isset($_GET['sid']) && (!is_string($_GET['bridge'] ?? null) || empty($_SESSION['oauth_bridge']) || !hash_equals($_SESSION['oauth_bridge'], $_GET['bridge']))) exit('Access Denied');
 if(empty($_SESSION['oauth_bridge'])) $_SESSION['oauth_bridge'] = bin2hex(random_bytes(32));
-if($islogin2==1 && !isset($_GET['code']) && !isset($_GET['act']) && !isset($_GET['unbind']) && isset($_GET['bind'])){
+if(isset($_GET['unbind'])){ http_response_code(405); exit('Method Not Allowed'); }
+if($islogin2==1 && !isset($_GET['code']) && !isset($_GET['act']) && isset($_GET['bind'])){
     $bindStart = $_SESSION['oauth_bind_start'] ?? null;
     if(!is_array($bindStart) || $bindStart['actor'] !== (string)$uid || $bindStart['provider'] !== 'wx' || $bindStart['expires'] < time()) exit('请从账户设置发起绑定');
 }
@@ -63,8 +64,9 @@ if(isset($_GET['bind'])){
 }
 $code_url .= '&bridge='.rawurlencode($_SESSION['oauth_bridge']);
 
-if($islogin2==1 && isset($_GET['unbind'])){
+if($islogin2==1 && $_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['unbind'])){
 	if(!checkRefererHost())exit();
+	if(!isset($_POST['csrf_token'])) exit('CSRF TOKEN ERROR');
 	csrf_check_page('user');
 	$DB->exec("update `pre_user` set `wx_uid`=NULL where `uid`='$uid'");
 	@header('Content-Type: text/html; charset=UTF-8');

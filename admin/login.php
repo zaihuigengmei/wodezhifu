@@ -37,6 +37,13 @@ function admin_totp_verify_once($code, $secret, $ip){
 }
 
 if(isset($_GET['act']) && $_GET['act']=='login'){
+  header('Content-Type: application/json; charset=UTF-8');
+  header('Cache-Control: no-store');
+  if($_SERVER['REQUEST_METHOD'] !== 'POST'){
+    header('Allow: POST');
+    http_response_code(405);
+    exit(json_encode(['code'=>405, 'msg'=>'登录接口仅接受 POST 请求']));
+  }
   if(!checkRefererHost()){
     http_response_code(403);
     exit(json_encode(['code'=>403, 'msg'=>'登录请求来源校验失败，请确认浏览器未禁用同站 Referer，并检查域名反代的 Host 设置']));
@@ -97,6 +104,13 @@ if(isset($_GET['act']) && $_GET['act']=='login'){
     }
   }
 }elseif(isset($_GET['act']) && $_GET['act']=='totp'){
+  header('Content-Type: application/json; charset=UTF-8');
+  header('Cache-Control: no-store');
+  if($_SERVER['REQUEST_METHOD'] !== 'POST'){
+    header('Allow: POST');
+    http_response_code(405);
+    exit(json_encode(['code'=>405, 'msg'=>'动态口令接口仅接受 POST 请求']));
+  }
   if(!checkRefererHost()){
     http_response_code(403);
     exit(json_encode(['code'=>403, 'msg'=>'登录请求来源校验失败，请确认浏览器未禁用同站 Referer，并检查域名反代的 Host 设置']));
@@ -129,6 +143,12 @@ if(isset($_GET['act']) && $_GET['act']=='login'){
   epay_set_cookie("admin_token", $token, $expiretime, "/admin");
   exit(json_encode(['code'=>0]));
 }elseif(isset($_GET['logout'])){
+	if($_SERVER['REQUEST_METHOD'] !== 'POST'){
+		header('Allow: POST');
+		http_response_code(405);
+		exit('Method Not Allowed');
+	}
+	csrf_check_page('admin');
 	if(!checkRefererHost())exit();
 	epay_delete_cookie("admin_token", "/admin");
 	exit("<script language='javascript'>window.location.href='./login.php';</script>");

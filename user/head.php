@@ -95,7 +95,7 @@ $conf = array_merge($conf, $groupconfig);
               </li>
               <li class="divider"></li>
               <li>
-                <a ui-sref="access.signin" href="login.php?logout">退出登录</a>
+                <form action="login.php?logout" method="post"><input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(csrf_token('user'), ENT_QUOTES, 'UTF-8')?>"><button type="submit" style="border:0;background:transparent;width:100%;text-align:left;padding:5px 20px;white-space:nowrap">退出登录</button></form>
               </li>
             </ul>
             <!-- / dropdown -->

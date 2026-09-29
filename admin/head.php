@@ -142,7 +142,7 @@ if($admin_cdnpublic==1){
         <?php if(class_exists('\\lib\\WxMchRisk')){?><li><a href="./mchrisk.php">渠道商户违规记录</a></li><?php }?>
             </ul>
           </li>
-          <li><a href="./login.php?logout" onclick="return confirm('是否确定退出登录？')"><i class="fa fa-power-off"></i> 退出登录</a></li>
+          <li><form action="./login.php?logout" method="post" style="display:inline" onsubmit="return confirm('是否确定退出登录？')"><input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(csrf_token('admin'), ENT_QUOTES, 'UTF-8')?>"><button type="submit" style="border:0;background:transparent;width:100%;text-align:left;padding:3px 20px;white-space:nowrap"><i class="fa fa-power-off"></i> 退出登录</button></form></li>
         </ul>
       </div><!-- /.navbar-collapse -->
     </div><!-- /.container -->
