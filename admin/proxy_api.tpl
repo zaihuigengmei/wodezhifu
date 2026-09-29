@@ -37,6 +37,9 @@ function curl_get_safe($url, $resolved)
     $port = isset($parts['port']) ? intval($parts['port']) : ($scheme === 'https' ? 443 : 80);
 
     $ch = curl_init($url);
+    // Direct connection is required: a proxy can bypass CURLOPT_RESOLVE DNS pinning.
+    curl_setopt($ch, CURLOPT_PROXY, '');
+    curl_setopt($ch, CURLOPT_NOPROXY, '*');
     $httpheader = array(
         "Accept: */*",
         "Accept-Language: zh-CN,zh;q=0.8",

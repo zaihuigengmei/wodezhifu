@@ -2,11 +2,45 @@
 include("../includes/common.php");
 if($islogin==1){}else exit("<script language='javascript'>window.location.href='./login.php';</script>");
 
+// Reauthorize each sensitive operation against the factor currently stored on the server.
+function verify_current_totp($conf, $submitted){
+	if($conf['totp_open'] != 1) return true;
+	if(empty($conf['totp_secret'])){
+		echojsonmsg('当前动态口令配置异常，请联系管理员');
+		return false;
+	}
+	$now = time();
+	$attempts = $_SESSION['totp_settings_attempts'] ?? ['until'=>$now+300, 'count'=>0];
+	if($attempts['until'] <= $now) $attempts = ['until'=>$now+300, 'count'=>0];
+	if($attempts['count'] >= 5){
+		echojsonmsg('验证次数过多，请稍后重试');
+		return false;
+	}
+	$attempts['count']++;
+	$_SESSION['totp_settings_attempts'] = $attempts;
+	if(!is_string($submitted) || !preg_match('/^[0-9]{6}$/D', $submitted)){
+		echojsonmsg('请输入当前动态口令');
+		return false;
+	}
+	try {
+		if(!\lib\TOTP::create($conf['totp_secret'])->verify($submitted)){
+			echojsonmsg('当前动态口令错误');
+			return false;
+		}
+	} catch (Exception $e) {
+		echojsonmsg('当前动态口令验证失败');
+		return false;
+	}
+	unset($_SESSION['totp_settings_attempts']);
+	return true;
+}
+
 if(isset($_POST['action'])){
 	if(!$islogin) exit(json_encode(['code'=>-1, 'msg'=>'未登录']));
 	if(!checkRefererHost()) exit(json_encode(['code'=>403, 'msg'=>'Forbidden']));
 	csrf_check_json('admin');
 	if($_POST['action'] == 'generate'){
+		if(!verify_current_totp($conf, $_POST['current_code'] ?? null)) exit;
 		try {
 			$totp = \lib\TOTP::create();
 			$totp->setLabel($conf['admin_user']);
@@ -16,8 +50,9 @@ if(isset($_POST['action'])){
 			echojsonmsg($e->getMessage());
 		}
 	}elseif($_POST['action'] == 'bind'){
-		$secret = trim($_POST['secret']);
-		$code = trim($_POST['code']);
+		if(!verify_current_totp($conf, $_POST['current_code'] ?? null)) exit;
+		$secret = is_string($_POST['secret'] ?? null) ? trim($_POST['secret']) : '';
+		$code = is_string($_POST['code'] ?? null) ? trim($_POST['code']) : '';
 		if(empty($secret) || empty($code)){
 			echojsonmsg('参数不完整');
 		}
@@ -34,6 +69,7 @@ if(isset($_POST['action'])){
 		$CACHE->clear();
 		echojson(['code' => 0, 'msg' => 'TOTP绑定成功']);
 	}elseif($_POST['action'] == 'close'){
+		if(!verify_current_totp($conf, $_POST['current_code'] ?? null)) exit;
 		saveSetting('totp_open', 0);
 		saveSetting('totp_secret', '');
 		$CACHE->clear();
@@ -99,6 +135,9 @@ foreach($account_list as $row){
 				<div class="qr-image mt-4" id="qrcode"></div>
 				<p><a href="javascript:;" data-clipboard-text="" id="copy-btn">复制密钥</a></p>
 				<form id="form-totp" style="text-align: left;" onsubmit="return bind_totp()">
+					<?php if($conf['totp_open'] == 1){ ?>
+					<div class="form-group"><label for="current-code">当前验证器的动态口令（重置前）</label><input type="text" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" class="form-control" id="current-code" autocomplete="off" required></div>
+					<?php } ?>
 					<div class="form-group mt-4">
 						<div class="input-group"><input type="number" class="form-control input-lg" name="code" id="code" value="" placeholder="填写动态口令" autocomplete="off" required><div class="input-group-btn"><input type="submit" name="submit" value="完成绑定" class="btn btn-success btn-lg btn-block"/></div></div>
 					</div>
@@ -114,10 +153,26 @@ foreach($account_list as $row){
 <script src="<?php echo $cdnpublic?>clipboard.js/1.7.1/clipboard.min.js"></script>
 <script>
 var commonData = {secret:null,qrcode:null};
+var totpEnabled = <?php echo $conf['totp_open'] == 1 ? 'true' : 'false'; ?>;
 function open_totp(){
 	if(!commonData.qrcode || !commonData.secret){
+		if(totpEnabled){
+			layer.prompt({title:'请输入当前验证器的动态口令以重置', formType:0}, function(currentCode, promptIndex){
+				if(!/^[0-9]{6}$/.test(currentCode)) return layer.msg('当前动态口令格式错误', {icon:2});
+				layer.close(promptIndex);
+				generate_totp(currentCode);
+			});
+			return;
+		}
+		generate_totp('');
+	}else{
+		$('#modal-totp').modal('show');
+		$("#code").focus();
+	}
+}
+function generate_totp(currentCode){
 		var ii = layer.load(2, {shade:[0.1,'#fff']});
-		$.post('?', {action:'generate'}, function(res){
+		$.post('?', {action:'generate', current_code:currentCode}, function(res){
 			layer.close(ii);
 			if(res.code == 0){
 				commonData.secret = res.data.secret;
@@ -137,19 +192,20 @@ function open_totp(){
 				layer.alert(res.msg, {icon: 2});
 			}
 		});
-	}else{
-		$('#modal-totp').modal('show');
-		$("#code").focus();
-	}
 }
 function bind_totp(){
 	var code = $("#code").val();
+	var currentCode = totpEnabled ? $("#current-code").val() : '';
+	if(totpEnabled && !/^[0-9]{6}$/.test(currentCode)){
+		layer.msg('当前动态口令格式错误', {icon: 2});
+		return false;
+	}
 	if(code.length != 6){
 		layer.msg('动态口令格式错误', {icon: 2});
 		return false;
 	}
 	var ii = layer.load(2, {shade:[0.1,'#fff']});
-	$.post('?', {action:'bind', secret:commonData.secret, code:code}, function(res){
+	$.post('?', {action:'bind', secret:commonData.secret, code:code, current_code:currentCode}, function(res){
 		layer.close(ii);
 		if(res.code == 0){
 			layer.alert('TOTP绑定成功', {icon: 1}, function(){
@@ -162,11 +218,11 @@ function bind_totp(){
 	return false;
 }
 function close_totp(){
-	layer.confirm('确定要关闭TOTP二次验证吗？', {
-		btn: ['确定','取消']
-	}, function(){
+	layer.prompt({title:'请输入当前验证器的动态口令以关闭', formType:0}, function(currentCode, promptIndex){
+		if(!/^[0-9]{6}$/.test(currentCode)) return layer.msg('当前动态口令格式错误', {icon:2});
+		layer.close(promptIndex);
 		var ii = layer.load(2, {shade:[0.1,'#fff']});
-		$.post('?', {action: 'close'}, function(res){
+		$.post('?', {action: 'close', current_code:currentCode}, function(res){
 			layer.close(ii);
 			if(res.code == 0){
 				layer.alert('TOTP已关闭', {icon: 1}, function(){

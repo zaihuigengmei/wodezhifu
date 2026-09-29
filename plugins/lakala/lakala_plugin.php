@@ -548,9 +548,6 @@ class lakala_plugin
 		global $channel, $order;
 
 		$json = file_get_contents('php://input');
-		if($channel['appswitch']==1){
-			file_put_contents('lakala_log.txt',$json);
-		}
 
 		$data = json_decode($json, true);
 		if(!$data) return ['type'=>'html','data'=>'no data'];
@@ -589,9 +586,6 @@ class lakala_plugin
 		global $channel, $order;
 
 		$json = file_get_contents('php://input');
-		if($channel['appswitch']==1){
-			file_put_contents('lakala_log.txt',$json);
-		}
 
 		$data = json_decode($json, true);
 		if(!$data) return ['type'=>'html','data'=>'no data'];

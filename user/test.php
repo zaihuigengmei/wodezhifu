@@ -3,8 +3,9 @@ $is_defend=true;
 include("../includes/common.php");
 if(!$conf['test_open'])sysmsg("未开启测试支付");
 if(isset($_GET['ok']) && isset($_GET['trade_no'])){
-	$trade_no=daddslashes($_GET['trade_no']);
-	$row=$DB->getRow("SELECT * FROM pre_order WHERE trade_no='{$trade_no}' AND uid='{$conf['test_pay_uid']}' limit 1");
+	$trade_no=$_GET['trade_no'];
+	if(!is_string($trade_no) || !preg_match('/^[0-9]{8,32}$/D', $trade_no))sysmsg('订单号不存在');
+	$row=$DB->getRow('SELECT * FROM pre_order WHERE trade_no=:trade_no AND uid=:uid AND tid=3 LIMIT 1', [':trade_no'=>$trade_no, ':uid'=>$conf['test_pay_uid']]);
 	if(!$row)sysmsg('订单号不存在');
 	if($row['status']!=1)sysmsg('订单未完成支付');
 	$money = $row['money'];

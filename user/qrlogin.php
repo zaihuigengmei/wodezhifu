@@ -3,6 +3,10 @@ error_reporting(0);
 
 session_start();
 header('Content-type: application/json');
+// Legacy QR accepts a browser-supplied qrsig and cannot bind authentication proof
+// to its initiating session. Its consumers are disabled; fail closed here too.
+unset($_SESSION['findpwd_qq']);
+exit(json_encode(array('saveOK'=>-1, 'msg'=>'Legacy QQ QR login disabled; use official OAuth.')));
 class qq_qrlogin{
 	public function getqrpic(){
 		$url='https://ssl.ptlogin2.qq.com/ptqrshow?appid=716027609&e=2&l=M&s=4&d=72&v=4&t=0.5409099'.time().'&daid=383&pt_3rd_aid=101487368';
