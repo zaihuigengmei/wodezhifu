@@ -1,59 +1,103 @@
 <?php
+function epay_ip_in_cidr($ip, $cidr){
+    list($network, $bits) = explode('/', $cidr);
+    $a = @inet_pton($ip); $b = @inet_pton($network); $bits = (int)$bits;
+    if($a === false || $b === false || strlen($a) !== strlen($b)) return false;
+    $bytes = intdiv($bits, 8); $remain = $bits % 8;
+    return substr($a, 0, $bytes) === substr($b, 0, $bytes)
+        && (!$remain || ((ord($a[$bytes]) ^ ord($b[$bytes])) & (255 << (8-$remain))) === 0);
+}
 function epay_is_public_ip($ip){
-	return filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) !== false;
+    if(!is_string($ip) || !filter_var($ip, FILTER_VALIDATE_IP)) return false;
+    if(strpos($ip, ':') !== false){
+        // Fail closed outside native global unicast. Blocks mapped/compatible IPv4,
+        // NAT64, ULA, link/site-local, multicast and unspecified addresses.
+        if(!epay_ip_in_cidr($ip, '2000::/3')) return false;
+        $deny = ['2001::/23','2001:db8::/32','2002::/16','3fff::/20'];
+    }else{
+        $deny = ['0.0.0.0/8','10.0.0.0/8','100.64.0.0/10','127.0.0.0/8',
+            '169.254.0.0/16','172.16.0.0/12','192.0.0.0/24','192.0.2.0/24',
+            '192.88.99.0/24','192.168.0.0/16','198.18.0.0/15','198.51.100.0/24',
+            '203.0.113.0/24','224.0.0.0/4','240.0.0.0/4'];
+    }
+    foreach($deny as $cidr) if(epay_ip_in_cidr($ip, $cidr)) return false;
+    return true;
 }
-
-function epay_is_safe_outbound_url($url, &$reason=null){
-	$parts = parse_url($url);
-	if($parts === false || empty($parts['scheme']) || empty($parts['host'])){ $reason = 'URL格式不正确'; return false; }
-	$scheme = strtolower($parts['scheme']);
-	if($scheme !== 'http' && $scheme !== 'https'){ $reason = '仅允许 http/https'; return false; }
-	if(isset($parts['user']) || isset($parts['pass'])){ $reason = 'URL不允许包含用户名或密码'; return false; }
-	$port = isset($parts['port']) ? intval($parts['port']) : ($scheme === 'https' ? 443 : 80);
-	if($port !== 80 && $port !== 443){ $reason = '仅允许 80/443 端口'; return false; }
-	$host = trim($parts['host'], '[]');
-	if(preg_match('/(^|\.)localhost$/i', $host)){ $reason = '禁止访问 localhost'; return false; }
-	$ips = [];
-	if(filter_var($host, FILTER_VALIDATE_IP)){ $ips[] = $host; }
-	else { $records = gethostbynamel($host); if($records === false || count($records) === 0){ $reason = '域名解析失败'; return false; } $ips = $records; }
-	foreach($ips as $ip){ if(!epay_is_public_ip($ip)){ $reason = '禁止访问内网/保留地址：'.$ip; return false; } }
-	return true;
+function epay_resolve_outbound_ips($host, $depth=0){
+    if($depth > 8) return false;
+    $records = @dns_get_record($host, DNS_A | DNS_AAAA | DNS_CNAME);
+    if(!$records) return false;
+    $ips = [];
+    foreach($records as $record){
+        if(isset($record['ip'])) $ips[] = $record['ip'];
+        if(isset($record['ipv6'])) $ips[] = $record['ipv6'];
+        if($record['type'] === 'CNAME'){
+            $next = epay_resolve_outbound_ips($record['target'], $depth+1);
+            if(!$next) return false;
+            $ips = array_merge($ips, $next);
+        }
+    }
+    return array_values(array_unique($ips));
 }
-
+function epay_outbound_target($url, &$reason=null, $resolver=null){
+    $reason = null;
+    if(!is_string($url) || strlen($url)>8192 || preg_match('/[\x00-\x20\x7f\\\\]/', $url)){
+        $reason='URL contains forbidden characters'; return false;
+    }
+    $p = parse_url($url);
+    if(!$p || !isset($p['scheme'],$p['host']) || !in_array(strtolower($p['scheme']), ['http','https'], true)
+        || isset($p['user']) || isset($p['pass'])){ $reason='Invalid URL'; return false; }
+    $port = $p['port'] ?? (strtolower($p['scheme']) === 'https' ? 443 : 80);
+    if(!in_array($port,[80,443],true)){ $reason='Forbidden port'; return false; }
+    $host = strtolower(trim($p['host'], '[]'));
+    $literal = filter_var($host, FILTER_VALIDATE_IP) !== false;
+    if($literal){ $ips = [$host]; }
+    else{
+        if(strlen($host)>253 || !preg_match('/\A(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]{0,62}\z/', $host)
+            || preg_match('/(^|\.)(localhost|local|internal|home|lan)$/', $host)){
+            $reason='Invalid/public DNS hostname required'; return false;
+        }
+        $ips = $resolver ? $resolver($host) : epay_resolve_outbound_ips($host);
+    }
+    if(!is_array($ips) || !$ips){ $reason='DNS resolution failed'; return false; }
+    foreach($ips as $ip) if(!epay_is_public_ip($ip)){ $reason='Non-public DNS address'; return false; }
+    return ['host'=>$host, 'port'=>$port, 'ip'=>$ips[0], 'literal'=>$literal];
+}
+function epay_is_safe_outbound_url($url, &$reason=null){ return epay_outbound_target($url,$reason) !== false; }
 function epay_assert_safe_outbound_url($url){
-	$reason = null;
-	if(!epay_is_safe_outbound_url($url, $reason)){ error_log('Epay blocked unsafe outbound URL: '.$url.' reason: '.$reason); return false; }
-	return true;
+    $reason=null;
+    if(!epay_is_safe_outbound_url($url,$reason)){ error_log('Epay blocked outbound request: '.$reason); return false; }
+    return true;
+}
+function epay_outbound_curl_options($target, $proxyEnabled=false){
+    // HTTP(S) and SOCKS5h proxies resolve remotely and can bypass CURLOPT_RESOLVE.
+    // Strict centralized fetches reject ALL configured proxies; never silently bypass one.
+    // A future proxy mode requires separate CONNECT/pinned-IP + TLS SNI integration tests.
+    if($proxyEnabled) return false;
+    $opts = [CURLOPT_PROXY=>'', CURLOPT_NOPROXY=>'*', CURLOPT_FOLLOWLOCATION=>false,
+        CURLOPT_MAXREDIRS=>0, CURLOPT_PROTOCOLS=>CURLPROTO_HTTP|CURLPROTO_HTTPS,
+        CURLOPT_REDIR_PROTOCOLS=>CURLPROTO_HTTP|CURLPROTO_HTTPS,
+        CURLOPT_SSL_VERIFYPEER=>true, CURLOPT_SSL_VERIFYHOST=>2,
+        CURLOPT_CONNECTTIMEOUT=>5, CURLOPT_TIMEOUT=>30];
+    if(!$target['literal']){
+        $address = strpos($target['ip'], ':') === false ? $target['ip'] : '['.$target['ip'].']';
+        $opts[CURLOPT_RESOLVE] = [$target['host'].':'.$target['port'].':'.$address];
+    }
+    return $opts;
+}
+function epay_prepare_outbound_curl($ch,$url,$proxyEnabled=false){
+    $reason=null;
+    $target=epay_outbound_target($url,$reason);
+    if($target===false) return false;
+    $options=epay_outbound_curl_options($target,$proxyEnabled);
+    return $options!==false && curl_setopt_array($ch,$options);
 }
 
 function curl_get($url)
 {
 	global $conf;
-	if(function_exists('epay_assert_safe_outbound_url') && !epay_assert_safe_outbound_url($url)) return false;
 	$ch=curl_init($url);
-	if($conf['proxy'] == 1){
-		$proxy_server = $conf['proxy_server'];
-		$proxy_port = intval($conf['proxy_port']);
-		if($conf['proxy_type'] == 'https'){
-			$proxy_type = CURLPROXY_HTTPS;
-		}elseif($conf['proxy_type'] == 'sock4'){
-			$proxy_type = CURLPROXY_SOCKS4;
-		}elseif($conf['proxy_type'] == 'sock5'){
-			$proxy_type = CURLPROXY_SOCKS5;
-		}elseif($conf['proxy_type'] == 'sock5h'){
-			$proxy_type = CURLPROXY_SOCKS5_HOSTNAME;
-		}else{
-			$proxy_type = CURLPROXY_HTTP;
-		}
-		curl_setopt($ch, CURLOPT_PROXYAUTH, CURLAUTH_BASIC);
-		curl_setopt($ch, CURLOPT_PROXY, $proxy_server);
-		curl_setopt($ch, CURLOPT_PROXYPORT, $proxy_port);
-		if(!empty($conf['proxy_user']) && !empty($conf['proxy_pwd'])){
-			$proxy_userpwd = $conf['proxy_user'].':'.$conf['proxy_pwd'];
-			curl_setopt($ch, CURLOPT_PROXYUSERPWD, $proxy_userpwd);
-		}
-		curl_setopt($ch, CURLOPT_PROXYTYPE, $proxy_type);
-	}
+	if(!epay_prepare_outbound_curl($ch,$url, !empty($conf['proxy']))){ curl_close($ch); return false; }
 	$httpheader[] = "Accept: */*";
 	$httpheader[] = "Accept-Language: zh-CN,zh;q=0.8";
 	$httpheader[] = "Connection: close";
@@ -70,8 +114,8 @@ function curl_get($url)
 }
 function get_curl($url, $post=0, $referer=0, $cookie=0, $header=0, $ua=0, $nobaody=0, $addheader=0, $location=0)
 {
-	if(function_exists('epay_assert_safe_outbound_url') && !epay_assert_safe_outbound_url($url)) return false;
 	$ch = curl_init();
+	if(!epay_prepare_outbound_curl($ch,$url)){ curl_close($ch); return false; }
 	curl_setopt($ch, CURLOPT_URL, $url);
 	curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
 	curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
@@ -852,40 +896,13 @@ function processOrder(&$srow,$notify=true){
 }
 
 function changeUserMoney($uid, $money, $add=true, $type=null, $orderid=null){
-	global $DB;
-	if($money<=0)return;
-	if($type=='代付退回' && !empty($orderid)){
-		$isrefund = $DB->getColumn("SELECT id FROM pre_record WHERE uid=:uid AND type='代付退回' AND trade_no=:orderid LIMIT 1", [':uid'=>$uid, ':orderid'=>$orderid]);
-		if($isrefund)return;
-	}
-	$DB->beginTransaction();
-	$oldmoney = $DB->getColumn("SELECT money FROM pre_user WHERE uid=:uid LIMIT 1 FOR UPDATE", [':uid'=>$uid]);
-	if($add == true){
-		$action = 1;
-		$newmoney = round($oldmoney+$money, 2);
-	}else{
-		$action = 2;
-		$newmoney = round($oldmoney-$money, 2);
-	}
-	$res = $DB->exec("UPDATE pre_user SET money=:money WHERE uid=:uid", [':money'=>$newmoney, ':uid'=>$uid]);
-	$DB->insert('record', ['uid'=>$uid, 'action'=>$action, 'money'=>$money, 'oldmoney'=>$oldmoney, 'newmoney'=>$newmoney, 'type'=>$type, 'trade_no'=>$orderid, 'date'=>'NOW()']);
-	$DB->commit();
-	return $res;
+	return \lib\Finance::change($uid, $money, $add, $type, $orderid);
 }
 
 function changeUserMoney2($uid, $oldmoney, $money, $add=true, $type=null, $orderid=null){
-	global $DB;
-	if($money<=0)return;
-	if($add == true){
-		$action = 1;
-		$newmoney = round($oldmoney+$money, 2);
-	}else{
-		$action = 2;
-		$newmoney = round($oldmoney-$money, 2);
-	}
-	$res = $DB->exec("UPDATE pre_user SET money=:money WHERE uid=:uid", [':money'=>$newmoney, ':uid'=>$uid]);
-	$DB->insert('record', ['uid'=>$uid, 'action'=>$action, 'money'=>$money, 'oldmoney'=>$oldmoney, 'newmoney'=>$newmoney, 'type'=>$type, 'trade_no'=>$orderid, 'date'=>'NOW()']);
-	return $res;
+	// Keep the legacy signature, but never trust a caller's stale balance.
+	// Finance joins an existing transaction using a savepoint.
+	return \lib\Finance::change($uid, $money, $add, $type, $orderid, !$add);
 }
 
 function changeUserGroup($uid, $gid, $endtime = null){

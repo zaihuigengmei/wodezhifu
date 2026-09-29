@@ -21,8 +21,7 @@ class Oauth{
 	public function login($type){
 
 		//-------生成唯一随机串防CSRF攻击
-		$state = md5(uniqid(rand(), TRUE));
-		$_SESSION['Oauth_state'] = $state;
+		$state = epay_oauth_issue('aggregate:'.$type, $this->callback);
 
 		//-------构造请求参数列表
 		$keysArr = array(
@@ -41,6 +40,7 @@ class Oauth{
 
 	//登录成功返回网站
 	public function callback(){
+		epay_oauth_consume('aggregate:'.($_GET['type'] ?? ''), $_GET['state'] ?? null, $this->callback);
 		//-------请求参数列表
 		$keysArr = array(
 			"act" => "callback",

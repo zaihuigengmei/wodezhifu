@@ -258,7 +258,18 @@ function getProof(biz_no) {
 			layer.close(ii);
 			if(data.code == 0){
 				if(data.download_url){
-					layer.alert('获取转账凭证成功！<a href="'+data.download_url+'" target="_blank">点击下载凭证</a>', {icon:1, title:'获取凭证'});
+					var proofUrl;
+					try {
+						if(typeof data.download_url !== 'string' || /[\u0000-\u0020\u007f]/.test(data.download_url)) throw new Error('Invalid URL');
+						proofUrl = new URL(data.download_url, window.location.href);
+						if(!/^https?:$/.test(proofUrl.protocol) || proofUrl.username || proofUrl.password) throw new Error('Invalid URL');
+					} catch(e) {
+						layer.alert('凭证下载地址无效', {icon:2, title:'获取失败'});
+						return;
+					}
+					var proofLink = $('<a>').attr({href:proofUrl.href, target:'_blank', rel:'noopener noreferrer'}).text('点击下载凭证');
+					var proofMessage = $('<div>').text('获取转账凭证成功！').append(proofLink).html();
+					layer.alert(proofMessage, {icon:1, title:'获取凭证'});
 				}else{
 					layer.alert(data.msg, {icon:1, title:'获取凭证'});
 				}

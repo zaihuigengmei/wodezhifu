@@ -589,17 +589,10 @@ class Pay
 		}
 
         $refund_no = date("YmdHis").rand(11111,99999);
-        if(!empty($queryArr['out_refund_no']) && strlen($queryArr['out_refund_no']) > 5){ //判断商户是否重复提交退款
-            $out_refund_no = daddslashes($queryArr['out_refund_no']);
-            $refund_order = $DB->find('refundorder', '*', ['out_refund_no'=>$out_refund_no, 'uid'=>$pid]);
-            if($refund_order && $refund_order['status'] == 1){
-                $result = ['code'=>0, 'refund_no'=>$refund_order['refund_no'], 'out_refund_no'=>$refund_order['out_refund_no'], 'trade_no'=>$refund_order['trade_no'], 'uid'=>$refund_order['uid'], 'money'=>$refund_order['money'], 'reducemoney'=>$refund_order['reducemoney'], 'msg'=>'已存在相同退款单号！退款金额¥'.$refund_order['money']];
-                return $result;
-            }elseif($refund_order && $refund_order['status'] == 0){
-                $refund_no = $refund_order['refund_no'];
-            }
-        }
-        
+        $out_refund_no = isset($queryArr['out_refund_no']) && $queryArr['out_refund_no'] !== ''
+            ? self::safeToken($queryArr['out_refund_no'], '商户退款单号') : null;
+        // All duplicate/status/amount/ownership checks run under Order's locks.
+        // Never return success merely because an external refund ID exists.
         $result = \lib\Order::refund($refund_no, $trade_no, $money, 1, $pid, $out_refund_no);
         if($result['code'] == 0){
             $result['msg'] = '退款成功！退款金额¥'.$result['money'];

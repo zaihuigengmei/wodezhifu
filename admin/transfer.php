@@ -173,6 +173,7 @@ $(document).ready(function(){
 			{
 				field: 'status',
 				title: '状态',
+				events: {'click .show-qrcode': function(e, value, row){e.preventDefault(); showQrcode(row.jumpurl, row.type);}},
 				formatter: function(value, row, index) {
 					if(value == '1'){
 						return '<font color=green>转账成功</font>';
@@ -181,9 +182,9 @@ $(document).ready(function(){
 					}else if(value == '3'){
 						return '<font color=blue>待处理</font>';
 					}else if(value == '4'){
-						return '<font color=#26a7e8>待领取</font><br/><a href="javascript:showQrcode(\''+row.jumpurl+'\',\''+row.type+'\')" class="btn btn-xs btn-success"><i class="fa fa-qrcode"></i> 红包码</a>';
+						return '<font color=#26a7e8>待领取</font><br/><a href="#" class="show-qrcode btn btn-xs btn-success"><i class="fa fa-qrcode"></i> 红包码</a>';
 					}else{
-						return '<a href="javascript:queryStatus(\''+row.biz_no+'\')" title="点此查询转账状态"><font color=orange>正在处理</font></a>' + (row.jumpurl ? '<br/><a href="javascript:showQrcode(\''+row.jumpurl+'\',\''+row.type+'\')" class="btn btn-xs btn-success"><i class="fa fa-qrcode"></i> 确认收款</a>' : '');
+						return '<a href="javascript:queryStatus(\''+row.biz_no+'\')" title="点此查询转账状态"><font color=orange>正在处理</font></a>' + (row.jumpurl ? '<br/><a href="#" class="show-qrcode btn btn-xs btn-success"><i class="fa fa-qrcode"></i> 确认收款</a>' : '');
 					}
 				}
 			},
@@ -233,12 +234,12 @@ function statistics(){
             if(data.code == 0){
                 var element = $('#modal-statistics');
                 var htmlContent = $("#statistics").html().replace(/\{(\w+)\}/g, function (match, key) {
-                    return data.data[key] || '';
+                    return escHtml(data.data[key] == null ? '' : data.data[key]);
                 });
                 element.find('.modal-body').html(htmlContent);
                 element.modal('show');
             }else{
-                layer.alert(data.msg);
+                layer.alert(escHtml(data.msg));
             }
         },
         error:function(data){
@@ -256,9 +257,9 @@ function showResult(biz_no) {
 		success : function(data) {
 			layer.close(ii);
 			if(data.code == 0){
-				layer.alert(data.msg, {icon:0, title:'失败原因', shadeClose:true});
+				layer.alert(escHtml(data.msg), {icon:0, title:'失败原因', shadeClose:true});
 			}else{
-				layer.alert(data.msg, {icon:2});
+				layer.alert(escHtml(data.msg), {icon:2});
 			}
 		},
 		error:function(data){
@@ -277,9 +278,9 @@ function queryStatus(biz_no) {
 			layer.close(ii);
 			if(data.code == 0){
 				searchSubmit();
-				layer.alert(data.msg, {title:'查询结果'});
+				layer.alert(escHtml(data.msg), {title:'查询结果'});
 			}else{
-				layer.alert(data.msg, {icon:2, title:'查询失败'});
+				layer.alert(escHtml(data.msg), {icon:2, title:'查询失败'});
 			}
 		},
 		error:function(data){
@@ -340,7 +341,7 @@ function setStatusFail(biz_no){
 					});
 				});
 			}else{
-				layer.alert(data.msg, {icon:2});
+				layer.alert(escHtml(data.msg), {icon:2});
 			}
 		},
 		error:function(data){
@@ -364,7 +365,7 @@ function delItem(biz_no) {
 				layer.closeAll();
 				searchSubmit();
 			}else{
-				layer.alert(data.msg, {icon: 2});
+				layer.alert(escHtml(data.msg), {icon: 2});
 			}
 		},
 		error:function(data){
@@ -386,9 +387,9 @@ function refund(biz_no){
 		dataType : 'json',
 		success : function(data) {
 			if(data.code == 0){
-				layer.alert(data.msg, {icon:1}, function(){ layer.closeAll();searchSubmit(); });
+				layer.alert(escHtml(data.msg), {icon:1}, function(){ layer.closeAll();searchSubmit(); });
 			}else{
-				layer.alert(data.msg, {icon: 2});
+				layer.alert(escHtml(data.msg), {icon: 2});
 			}
 		},
 		error:function(data){
@@ -410,9 +411,9 @@ function cancel(biz_no){
 		dataType : 'json',
 		success : function(data) {
 			if(data.code == 0){
-				layer.alert(data.msg, {icon:1}, function(){ layer.closeAll();searchSubmit(); });
+				layer.alert(escHtml(data.msg), {icon:1}, function(){ layer.closeAll();searchSubmit(); });
 			}else{
-				layer.alert(data.msg, {icon: 2});
+				layer.alert(escHtml(data.msg), {icon: 2});
 			}
 		},
 		error:function(data){
@@ -434,12 +435,23 @@ function getProof(biz_no) {
 			layer.close(ii);
 			if(data.code == 0){
 				if(data.download_url){
-					layer.alert('获取转账凭证成功！<a href="'+data.download_url+'" target="_blank">点击下载凭证</a>', {icon:1, title:'获取凭证'});
+					var proofUrl;
+					try {
+						if(typeof data.download_url !== 'string' || /[\u0000-\u0020\u007f]/.test(data.download_url)) throw new Error('Invalid URL');
+						proofUrl = new URL(data.download_url, window.location.href);
+						if(!/^https?:$/.test(proofUrl.protocol) || proofUrl.username || proofUrl.password) throw new Error('Invalid URL');
+					} catch(e) {
+						layer.alert('凭证下载地址无效', {icon:2, title:'获取失败'});
+						return;
+					}
+					var proofLink = $('<a>').attr({href:proofUrl.href, target:'_blank', rel:'noopener noreferrer'}).text('点击下载凭证');
+					var proofMessage = $('<div>').text('获取转账凭证成功！').append(proofLink).html();
+					layer.alert(proofMessage, {icon:1, title:'获取凭证'});
 				}else{
-					layer.alert(data.msg, {icon:1, title:'获取凭证'});
+					layer.alert(escHtml(data.msg), {icon:1, title:'获取凭证'});
 				}
 			}else{
-				layer.alert(data.msg, {icon:2, title:'获取失败'});
+				layer.alert(escHtml(data.msg), {icon:2, title:'获取失败'});
 			}
 		},
 		error:function(data){
@@ -468,9 +480,9 @@ function operation(status){
 			layer.close(ii);
 			if(data.code == 0){
 				searchSubmit();
-				layer.alert(data.msg);
+				layer.alert(escHtml(data.msg));
 			}else{
-				layer.alert(data.msg);
+				layer.alert(escHtml(data.msg));
 			}
 		},
 		error:function(data){

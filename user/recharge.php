@@ -26,13 +26,14 @@ $_SESSION['csrf_token'] = $csrf_token;
 	<div class="row">
 	<div class="col-xs-12 col-sm-10 col-md-8 col-lg-6 center-block" style="float: none;">
 	<?php if(isset($_GET['ok']) && $_GET['ok']==1){
-	$order = $DB->getRow("SELECT * FROM pre_order WHERE trade_no=:trade_no limit 1", [':trade_no'=>$_GET['trade_no']]);
+	$order = epay_result_order($_GET['trade_no'] ?? null, 2, $uid);
+	if($order){
 	?>
 	<div class="alert alert-success alert-dismissible" role="alert">
 	  <button type="button" class="close" data-dismiss="alert" aria-label="Close"><span aria-hidden="true">&times;</span></button>
 	  恭喜你成功充值<strong><?php echo $order['money']?></strong>元余额！
 	</div>
-	<?php }?>
+	<?php }}?>
 	<div class="alert alert-info text-md">
 		<p>充值的余额仅限用于平台消费或订单退款资金，严禁频繁大额充值后提现，否则封禁商户并冻结余额！</p>
 	</div>

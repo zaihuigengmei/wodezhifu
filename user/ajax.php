@@ -98,7 +98,7 @@ case 'login':
 				$_SESSION['wxnotice_login_uid'] = $uid;
 			}
 		}
-		$session=md5($uid.$userrow['key'].$password_hash);
+		$session=epay_user_session_digest($userrow);
 		$expiretime=time()+604800;
 		$token=authcode("{$uid}\t{$session}\t{$expiretime}", 'ENCODE', SYS_KEY);
 		ob_clean();
@@ -141,7 +141,7 @@ case 'wxalogin':
 		$uid=$userrow['uid'];
 		$key=$userrow['key'];
 		$DB->insert('log', ['uid'=>$uid, 'type'=>'微信快捷登录', 'date'=>'NOW()', 'ip'=>$clientip]);
-		$session=md5($uid.$key.$password_hash);
+		$session=epay_user_session_digest($userrow);
 		$expiretime=time()+2592000;
 		$token=authcode("{$uid}\t{$session}\t{$expiretime}", 'ENCODE', SYS_KEY);
 		epay_set_cookie("user_token", $token, time() + 2592000, "/user");
@@ -156,6 +156,8 @@ break;
 case 'connect':
 	$type = isset($_POST['type'])?$_POST['type']:exit('{"code":-1,"msg":"no type"}');
 	$bind = isset($_POST['bind'])?$_POST['bind']:null;
+	if($islogin2==1){ csrf_check_json('user'); if($bind != '1') exit('{"code":-1,"msg":"请明确发起绑定"}'); }
+	if($islogin2==1) $_SESSION['oauth_bind_start'] = ['actor'=>(string)$uid, 'provider'=>$type, 'expires'=>time()+300];
 	if($type == 'qq' && $conf['login_qq']==3 || $type == 'wx' && $conf['login_wx']==-1 || $type == 'alipay' && $conf['login_alipay']==-1){
 		if(!$conf['login_apiurl'] || !$conf['login_appid'] || !$conf['login_appkey'])exit('{"code":-1,"msg":"未配置好聚合登录信息"}');
 		$Oauth_config = [
@@ -183,7 +185,8 @@ case 'connect':
 		$url = $QC->qq_login(true);
 		$result = ['code'=>0, 'url'=>$url];
 	}elseif($type == 'qq' && $conf['login_qq']==2){
-		$result = ['code'=>0, 'url'=>'connect.php'.($bind=='1'?'?bind=1':'')];
+		unset($_SESSION['findpwd_qq']);
+		$result = ['code'=>-1, 'msg'=>'旧版QQ扫码登录已停用，请使用账号密码或联系管理员配置QQ官方/聚合OAuth登录'];
 	}elseif($type == 'wx' && $conf['login_wx']>0){
 		$result = ['code'=>0, 'url'=>'wxlogin.php'.($bind=='1'?'?bind=1':'')];
 	}elseif($type == 'alipay' && $conf['login_alipay']>0){

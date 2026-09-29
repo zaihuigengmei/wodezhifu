@@ -227,10 +227,10 @@ case 'batch_submit':
 	if(!in_array($type, ['alipay','wxpay','qqpay','bank'], true)) exit('{"code":-2,"msg":"转账类型不合法"}');
 	$out_biz_no = date("YmdHis").rand(11111,99999);
 	if(!isset($_POST['paypwd']) || $_POST['paypwd']!==$conf['admin_paypwd'])exit('{"code":-2,"msg":"支付密码错误"}');
-	$payee_account = htmlspecialchars(trim($_POST['account']));
-	$payee_real_name = htmlspecialchars(trim($_POST['name']));
+	$payee_account = trim($_POST['account']);
+	$payee_real_name = trim($_POST['name']);
 	$money = trim($_POST['money']);
-	$desc = htmlspecialchars(trim($_POST['desc']));
+	$desc = trim($_POST['desc']);
 	if(empty($payee_account) || empty($money))exit('{"code":-2,"msg":"必填项不能为空"}');
 	if($desc && mb_strlen($desc)>32)exit('{"code":-2,"msg":"转账备注最多32个字"}');
 	if(!is_numeric($money) || !preg_match('/^[0-9.]+$/', $money) || $money<=0)exit('{"code":-2,"msg":"转账金额输入不规范"}');

@@ -46,6 +46,7 @@ if($islogin==1){}else exit("<script language='javascript'>window.location.href='
 <script src="../assets/js/bootstrap-table-page-jump-to.min.js"></script>
 <script src="../assets/js/custom.js"></script>
 <script>
+function escHtml(v){return $('<div>').text(v == null ? '' : String(v)).html();}
 $(document).ready(function(){
 	updateToolbar();
 	const defaultPageSize = 30;
@@ -101,9 +102,9 @@ $(document).ready(function(){
 				title: '结算账号/姓名',
 				formatter: function(value, row, index) {
 					if(row.type == '5'){
-						return value+'&nbsp;'+row.username;
+						return escHtml(value)+'&nbsp;'+escHtml(row.username);
 					}else{
-						return '<span onclick="inputInfo('+row.id+')" title="点击直接修改">'+value+'&nbsp;'+row.username+'</span>';
+						return '<span onclick="inputInfo('+row.id+')" title="点击直接修改">'+escHtml(value)+'&nbsp;'+escHtml(row.username)+'</span>';
 					}
 				}
 			},
@@ -125,9 +126,10 @@ $(document).ready(function(){
 			{
 				field: 'status',
 				title: '状态',
+				events: {'click .show-qrcode': function(e, value, row){e.preventDefault(); showQrcode(row.jumpurl);}},
 				formatter: function(value, row, index) {
 					if(value == '1'){
-						return '<font color=green>已完成</font>' + (row.jumpurl ? '<br/><a href="javascript:showQrcode(\''+row.jumpurl+'\')" class="btn btn-xs btn-success"><i class="fa fa-qrcode"></i> 确认收款</a>' : '');
+						return '<font color=green>已完成</font>' + (row.jumpurl ? '<br/><a href="#" class="show-qrcode btn btn-xs btn-success"><i class="fa fa-qrcode"></i> 确认收款</a>' : '');
 					}else if(value == '2'){
 						return '<font color=orange>正在结算</font>';
 					}else if(value == '3'){
@@ -167,9 +169,9 @@ function operation(status){
 			layer.close(ii);
 			if(data.code == 0){
 				searchSubmit();
-				layer.alert(data.msg);
+				layer.alert(escHtml(data.msg));
 			}else{
-				layer.alert(data.msg);
+				layer.alert(escHtml(data.msg));
 			}
 		},
 		error:function(data){
@@ -182,9 +184,9 @@ function operation(status){
 function setStatusDo(id, status) {
 	var ii = layer.load(2, {shade:[0.1,'#fff']});
 	$.ajax({
-		type : 'get',
-		url : 'ajax_settle.php',
-		data : 'act=setSettleStatus&id=' + id + '&status=' + status,
+		type : 'POST',
+		url : 'ajax_settle.php?act=setSettleStatus',
+		data : {id:id, status:status},
 		dataType : 'json',
 		success : function(ret) {
 			layer.close(ii);
@@ -233,7 +235,7 @@ function setResult(id) {
 						if(data.code == 0){
 							layer.msg('填写失败原因成功');
 						}else{
-							layer.alert(data.msg);
+							layer.alert(escHtml(data.msg));
 						}
 					},
 					error:function(data){
@@ -243,7 +245,7 @@ function setResult(id) {
 				});
 			});
 			}else{
-				layer.alert(data.msg);
+				layer.alert(escHtml(data.msg));
 			}
 		},
 		error:function(data){
@@ -271,7 +273,7 @@ function inputInfo(id) {
 				  }
 				});
 			}else{
-				layer.alert(data.msg);
+				layer.alert(escHtml(data.msg));
 			}
 		},
 		error:function(data){
@@ -299,7 +301,7 @@ function saveInfo(id) {
 				layer.msg('保存成功！', {time:800});
 				searchSubmit();
 			}else{
-				layer.alert(data.msg);
+				layer.alert(escHtml(data.msg));
 			}
 			$('#save').val('保存');
 		} 

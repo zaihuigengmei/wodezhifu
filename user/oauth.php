@@ -8,14 +8,23 @@ if($conf['login_alipay']==0)sysmsg("未开启支付宝快捷登录");
 
 if(isset($_GET['sid'])){
 	$sid = trim(daddslashes($_GET['sid']));
-	if(!preg_match('/^(.[a-zA-Z0-9]+)$/',$sid))exit("Access Denied");
+	if(!preg_match('/^[a-zA-Z0-9,-]{22,128}$/D',$sid))exit("Access Denied");
 	session_id($sid);
 }
 session_start();
+if(isset($_GET['sid']) && (!is_string($_GET['bridge'] ?? null) || empty($_SESSION['oauth_bridge']) || !hash_equals($_SESSION['oauth_bridge'], $_GET['bridge']))) exit('Access Denied');
+if(empty($_SESSION['oauth_bridge'])) $_SESSION['oauth_bridge'] = bin2hex(random_bytes(32));
+if($islogin2==1 && !isset($_GET['auth_code']) && !isset($_GET['act']) && !isset($_GET['unbind'])){
+    $bindStart = $_SESSION['oauth_bind_start'] ?? null;
+    if(!is_array($bindStart) || $bindStart['actor'] !== (string)$uid || $bindStart['provider'] !== 'alipay' || $bindStart['expires'] < time()) exit('请从账户设置发起绑定');
+}
+if(!isset($_GET['sid']) && !isset($_GET['auth_code']) && !isset($_GET['act'])) $_SESSION['alipay_intent'] = ['actor'=>epay_oauth_actor(), 'expires'=>time()+300];
 
 if(isset($_GET['act']) && $_GET['act']=='login'){
-	if(isset($_SESSION['alipay_uid']) && !empty($_SESSION['alipay_uid'])){
-		$alipay_uid = daddslashes($_SESSION['alipay_uid']);
+	$verified = $_SESSION['alipay_verified'] ?? null;
+	unset($_SESSION['alipay_verified']);
+	if(is_array($verified) && $verified['expires'] >= time() && $verified['actor'] === epay_oauth_actor()){
+		$alipay_uid = daddslashes($verified['id']);
 		$userrow=$DB->getRow("SELECT * FROM pre_user WHERE alipay_uid='{$alipay_uid}' limit 1");
 		if($userrow){
 			$uid=$userrow['uid'];
@@ -23,7 +32,7 @@ if(isset($_GET['act']) && $_GET['act']=='login'){
 			if($islogin2==1){
 				exit('{"code":-1,"msg":"当前支付宝已绑定商户ID:'.$uid.'，请勿重复绑定！"}');
 			}
-			$session=md5($uid.$key.$password_hash);
+			$session=epay_user_session_digest($userrow);
 			$expiretime=time()+2592000;
 			$token=authcode("{$uid}\t{$session}\t{$expiretime}", 'ENCODE', SYS_KEY);
 			epay_set_cookie("user_token", $token, time() + 2592000, "/user");
@@ -44,6 +53,8 @@ if(isset($_GET['act']) && $_GET['act']=='login'){
 }
 
 if(isset($_GET['auth_code'])){
+	try { epay_oauth_consume('alipay', $_GET['state'] ?? null, 'merchant'); }
+	catch(Exception $e){ sysmsg('授权已失效，请重新发起登录或绑定'); exit; }
 
 	$channel = \lib\Channel::get($conf['login_alipay']);
 	if(!$channel)sysmsg('当前支付通道信息不存在');
@@ -64,13 +75,13 @@ if(isset($_GET['auth_code'])){
 		$user_id = $result['open_id'];
 		$user_type = 'openid';
 	}
-	if(isset($_GET['state'])){
-		$redirect_uri = authcode(str_replace(' ', '+', $_GET['state']), 'DECODE', SYS_KEY);
-		if($redirect_uri && substr($redirect_uri, 0, 1) == '/'){
-			exit("<script language='javascript'>window.location.replace('{$redirect_uri}?userid={$user_id}&usertype={$user_type}&appid={$channel['appid']}');</script>");
-		}
+
+	$intent = $_SESSION['alipay_intent'] ?? ['actor'=>epay_oauth_actor(), 'expires'=>time()+300];
+	if($intent['expires'] < time()) exit('授权已过期');
+	if(isset($_GET['sid'])){
+		$_SESSION['alipay_verified'] = ['id'=>$user_id, 'actor'=>$intent['actor'], 'expires'=>time()+120];
+		exit('授权成功，请返回原页面');
 	}
-	$_SESSION['alipay_uid'] = $user_id;
 
 	$userrow=$DB->getRow("SELECT * FROM pre_user WHERE alipay_uid=:user_id limit 1", [':user_id'=>$user_id]);
 	if($userrow){
@@ -81,7 +92,7 @@ if(isset($_GET['auth_code'])){
 			exit("<script language='javascript'>alert('当前支付宝已绑定商户ID:{$uid}，请勿重复绑定！');window.location.href='./editinfo.php';</script>");
 		}
 		$DB->insert('log', ['uid'=>$uid, 'type'=>'支付宝快捷登录', 'date'=>'NOW()', 'ip'=>$clientip, 'city'=>$city]);
-		$session=md5($uid.$key.$password_hash);
+		$session=epay_user_session_digest($userrow);
 		$expiretime=time()+2592000;
 		$token=authcode("{$uid}\t{$session}\t{$expiretime}", 'ENCODE', SYS_KEY);
 		epay_set_cookie("user_token", $token, time() + 2592000, "/user");
@@ -110,10 +121,11 @@ if(isset($_GET['auth_code'])){
 	$alipay_config = require(PLUGIN_ROOT.$channel['plugin'].'/inc/config.php');
 	$oauth = new \Alipay\AlipayOauthService($alipay_config);
 	$redirect_uri = $siteurl.'user/oauth.php';
-	$oauth->oauth($redirect_uri, isset($_GET['state'])?trim($_GET['state']):null);
+	if(isset($_GET['sid'])) $redirect_uri .= '?'.http_build_query(['sid'=>session_id(), 'bridge'=>$_SESSION['oauth_bridge']]);
+	$oauth->oauth($redirect_uri, epay_oauth_issue('alipay', 'merchant'));
 }else{
 
-$code_url = $siteurl.'user/oauth.php?sid='.session_id();
+$code_url = $siteurl.'user/oauth.php?sid='.session_id().'&bridge='.rawurlencode($_SESSION['oauth_bridge']);
 if(isset($_GET['bind'])){
 	$code_url .= '&bind=1';
 }
@@ -157,7 +169,7 @@ if(isset($_GET['bind'])){
 <script src="<?php echo $cdnpublic?>twitter-bootstrap/3.4.1/js/bootstrap.min.js"></script>
 <script>
 function jump(){
-	var url = '<?php echo $code_url?>';
+	var url = <?php echo json_encode($code_url, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT)?>;
 	window.location.href='alipays://platformapi/startapp?saId=10000007&clientVersion=3.7.0.0718&qrcode='+encodeURIComponent(url);
 }
 $(document).ready(function(){

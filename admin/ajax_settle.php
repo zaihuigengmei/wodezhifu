@@ -20,7 +20,7 @@ function admin_safe_date($value){
 }
 function admin_safe_token($value, $name='参数'){
 	$value = trim((string)$value);
-	if($value === '' || !preg_match('/^[a-zA-Z0-9_.:-]{1,128}$/', $value)) exit('{"code":-1,"msg":"'.$name.'不合法"}');
+	if($value === '' || !preg_match('/^[a-zA-Z0-9_.:-]{1,128}$/', $value)) exit(json_encode(['code'=>-1, 'msg'=>''.$name.'不合法']));
 	return $value;
 }
 function admin_safe_text($value, $max=128){
@@ -60,8 +60,8 @@ case 'settleList':
 	$list2 = [];
 	foreach($list as $row){
 		if($row['type'] == 2 && $row['status'] == 1 && !empty($row['transfer_ext']) && time() - strtotime($row['transfer_date']) <= 86400){
-			if(substr($row['ext'], 0, 4) == 'http'){
-				$row['jumpurl'] = $row['ext'];
+			if(substr($row['transfer_ext'], 0, 4) == 'http'){
+				$row['jumpurl'] = $row['transfer_ext'];
 			}else{
 				$row['jumpurl'] = $siteurl.'paypage/wxtrans.php?id='.$row['id'].'&type=settle';
 			}
@@ -104,7 +104,7 @@ case 'setSettleStatus':
 			exit('{"code":200}');
 		}
 		else{
-			exit('{"code":400,"msg":"删除记录失败！['.$DB->error().']"}');
+			exit(json_encode(['code'=>400, 'msg'=>'删除记录失败！['.$DB->error().']']));
 		}
 	}else{
 		if($status==1){
@@ -118,7 +118,7 @@ case 'setSettleStatus':
 		if($DB->exec($sql)!==false)
 			exit('{"code":200}');
 		else
-			exit('{"code":400,"msg":"修改记录失败！['.$DB->error().']"}');
+			exit(json_encode(['code'=>400, 'msg'=>'修改记录失败！['.$DB->error().']']));
 	}
 break;
 case 'opslist':
@@ -138,14 +138,14 @@ case 'opslist':
 		$DB->exec($sql);
 		$i++;
 	}
-	exit('{"code":0,"msg":"成功改变'.$i.'条记录状态"}');
+	exit(json_encode(['code'=>0, 'msg'=>'成功改变'.$i.'条记录状态']));
 break;
 case 'settle_result':
 	$id=intval($_POST['id']);
 	$row=$DB->getRow("select result from pre_settle where id='$id' limit 1");
 	if(!$row)
 		exit('{"code":-1,"msg":"当前结算记录不存在！"}');
-	$result = ['code'=>0,'msg'=>'succ','result'=>htmlspecialchars($row['result'], ENT_QUOTES, 'UTF-8')];
+	$result = ['code'=>0,'msg'=>'succ','result'=>$row['result']];
 	exit(json_encode($result));
 break;
 case 'settle_setresult':
@@ -158,14 +158,14 @@ case 'settle_setresult':
 	if($sds!==false)
 		exit('{"code":0,"msg":"修改成功！"}');
 	else
-		exit('{"code":-1,"msg":"修改失败！'.$DB->error().'"}');
+		exit(json_encode(['code'=>-1, 'msg'=>'修改失败！'.$DB->error().'']));
 break;
 case 'settle_info':
 	$id=intval($_GET['id']);
 	$rows=$DB->getRow("select * from pre_settle where id='$id' limit 1");
 	if(!$rows)
 		exit('{"code":-1,"msg":"当前结算记录不存在！"}');
-	$data = '<div class="form-group"><div class="input-group"><div class="input-group-addon">结算方式</div><select class="form-control" id="pay_type" default="'.$rows['type'].'">'.($conf['settle_alipay']?'<option value="1">支付宝</option>':null).''.($conf['settle_wxpay']?'<option value="2">微信</option>':null).''.($conf['settle_qqpay']?'<option value="3">QQ钱包</option>':null).''.($conf['settle_bank']?'<option value="4">银行卡</option>':null).'</select></div></div>';
+	$data = '<div class="form-group"><div class="input-group"><div class="input-group-addon">结算方式</div><select class="form-control" id="pay_type" default="'.intval($rows['type']).'">'.($conf['settle_alipay']?'<option value="1">支付宝</option>':null).''.($conf['settle_wxpay']?'<option value="2">微信</option>':null).''.($conf['settle_qqpay']?'<option value="3">QQ钱包</option>':null).''.($conf['settle_bank']?'<option value="4">银行卡</option>':null).'</select></div></div>';
 	$data .= '<div class="form-group"><div class="input-group"><div class="input-group-addon">结算账号</div><input type="text" id="pay_account" value="'.htmlspecialchars($rows['account'], ENT_QUOTES, 'UTF-8').'" class="form-control" required/></div></div>';
 	$data .= '<div class="form-group"><div class="input-group"><div class="input-group-addon">真实姓名</div><input type="text" id="pay_name" value="'.htmlspecialchars($rows['username'], ENT_QUOTES, 'UTF-8').'" class="form-control" required/></div></div>';
 	$data .= '<input type="submit" id="save" onclick="saveInfo('.$id.')" class="btn btn-primary btn-block" value="保存">';
@@ -175,13 +175,13 @@ break;
 case 'settle_save':
 	$id=intval($_POST['id']);
 	$pay_type=intval($_POST['pay_type']);
-	$pay_account=htmlspecialchars(trim($_POST['pay_account']));
-	$pay_name=htmlspecialchars(trim($_POST['pay_name']));
+	$pay_account=trim($_POST['pay_account']);
+	$pay_name=trim($_POST['pay_name']);
 	$data = ['type'=>$pay_type, 'account'=>$pay_account, 'username'=>$pay_name];
 	if($DB->update('settle', $data, ['id'=>$id])!==false)
 		exit('{"code":0,"msg":"修改记录成功！"}');
 	else
-		exit('{"code":-1,"msg":"修改记录失败！'.$DB->error().'"}');
+		exit(json_encode(['code'=>-1, 'msg'=>'修改记录失败！'.$DB->error().'']));
 break;
 case 'paypwd_check':
 	if(isset($_SESSION['paypwd']) && $_SESSION['paypwd']==$conf['admin_paypwd'])
@@ -215,7 +215,7 @@ case 'transfer':
 	if(!$row)exit('{"code":-1,"msg":"记录不存在"}');
 	if($row['type']!=$type)exit('{"code":-1,"msg":"转账类型不正确"}');
 
-	if($row['transfer_status']==1)exit('{"code":0,"ret":2,"result":"转账订单号:'.$row['transfer_result'].' 支付时间:'.$row['transfer_date'].'"}');
+	if($row['transfer_status']==1)exit(json_encode(['code'=>0, 'ret'=>2, 'result'=>'转账订单号:'.$row['transfer_result'].' 支付时间:'.$row['transfer_date'].'']));
 
 	if($type == 1){
 		$app = 'alipay';

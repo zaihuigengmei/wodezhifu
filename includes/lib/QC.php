@@ -28,8 +28,7 @@ class QC{
     }
 
     public function qq_login($is_geturl = false){
-        $state = md5(uniqid(rand(), TRUE));
-        $_SESSION['Oauth_state'] = $state;
+        $state = epay_oauth_issue('qq', $this->callback);
 
         //-------构造请求参数列表
         $keysArr = array(
@@ -48,9 +47,7 @@ class QC{
     }
 
     public function qq_callback(){
-        if($_GET['state'] != $_SESSION['Oauth_state']){
-            sysmsg("<h2>The state does not match. You may be a victim of CSRF.</h2>");
-        }
+        epay_oauth_consume('qq', $_GET['state'] ?? null, $this->callback);
         //-------请求参数列表
         $keysArr = array(
             "grant_type" => "authorization_code",

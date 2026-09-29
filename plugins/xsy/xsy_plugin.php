@@ -381,7 +381,9 @@ class xsy_plugin
 		try{
 			$result = $client->request('/trade/reverseScan', $params);
 			if($client->res_code == '0000'){
-				if(!self::notifyResultValid($result, $order)) return ['type'=>'error','msg'=>'网关返回订单号或金额不匹配'];
+                // reverseScan response does not promise amt/merchantNo; query their documented source.
+                $result = self::orderQuery($client, TRADE_NO);
+				if(!self::notifyResultValid($result, $order)) return ['type'=>'error','msg'=>'网关返回订单号、状态、商户或金额不匹配'];
 				processNotify($order, $result['outOrderNo'], $result['buyerId'], $result['transactionId']);
 				return ['type'=>'scan','data'=>['type'=>$order['typename'], 'trade_no'=>$result['orderNo'], 'api_trade_no'=>$result['outOrderNo'], 'buyer'=>$result['buyerId'], 'money'=>$order['realmoney']]];
 			}else{
@@ -441,7 +443,12 @@ class xsy_plugin
 	}
 
     static private function notifyResultValid($result, $order){
-        return isset($result['orderNo'], $result['amt']) && $result['orderNo'] == TRADE_NO && epay_callback_cent_match($result['amt'], $order['realmoney']);
+        global $channel;
+        // Provider specification v1.0.8 sections 2.2, 2.4 and 2.6: tranSts, not code, is the payment state.
+        return ($result['tranSts'] ?? null) === 'SUCCESS'
+            && ($result['merchantNo'] ?? null) === (string)$channel['appmchid']
+            && isset($result['orderNo'], $result['amt']) && $result['orderNo'] === (string)TRADE_NO
+            && epay_callback_cent_match($result['amt'], $order['realmoney']);
     }
 
     //回调
@@ -464,8 +471,10 @@ class xsy_plugin
             $buyer = $arr['respData']['buyerId'];
             $bill_trade_no = $arr['respData']['transactionId'];
             $bill_mch_trade_no = $arr['respData']['thirdPartyUuid'];
-            if($out_trade_no == TRADE_NO && epay_callback_cent_match(($arr['respData']['amt'] ?? null), $order['realmoney'])){
+            if(self::notifyResultValid($arr['respData'] ?? [], $order)){
                 processNotify($order, $api_trade_no, $buyer, $bill_trade_no, $bill_mch_trade_no);
+            }else{
+                return ['type' => 'html', 'data' => '{"code":"fail"}'];
             }
             return ['type' => 'html', 'data' => '{"code":"success"}'];
         } catch (Exception $e) {

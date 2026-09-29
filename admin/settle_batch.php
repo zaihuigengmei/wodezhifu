@@ -76,7 +76,7 @@ function Transfer(){
 				}else{
 					statusself.html('<font color="red">失败</font>');
 				}
-				$('#res'+id).html('<font color="blue">'+d.result+'</font>');
+				$('#res'+id).empty().append($('<font color="blue">').text(d.result == null ? '' : String(d.result)));
 				checkself.attr('checked',false);
 				Transfer();
 			}else if(d.code==-1){
@@ -122,7 +122,7 @@ $(document).ready(function(){
 				}else{
 					self.html('<font color="red">失败</font>');
 				}
-				$('#res'+id).html('<font color="blue">'+d.result+'</font>');
+				$('#res'+id).empty().append($('<font color="blue">').text(d.result == null ? '' : String(d.result)));
 				$('.uins[value='+id+']').attr('checked',false);
 				self.removeClass('nocheck');
 			}else if(d.code==-1){

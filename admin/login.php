@@ -9,8 +9,36 @@ $login_limit_file = '@login.lock';
 if(!function_exists("imagecreate") || !file_exists('code.php'))$verifycode=0;
 include("../includes/common.php");
 
+// Serialize attempts across sessions; persist counters only, never passwords or OTPs.
+function admin_totp_verify_once($code, $secret, $ip){
+  $file = sys_get_temp_dir().'/epay-totp-'.hash_hmac('sha256', 'admin-totp', SYS_KEY).'.json';
+  $fp = @fopen($file, 'c+');
+  if(!$fp || !flock($fp, LOCK_EX)) throw new RuntimeException('验证暂不可用');
+  @chmod($file, 0600);
+  try {
+    $data = json_decode(stream_get_contents($fp), true) ?: [];
+    $now = time();
+    $key = hash('sha256', $ip);
+    foreach(($data['attempts'] ?? []) as $k=>$v) if($v['until'] <= $now) unset($data['attempts'][$k]);
+    $attempt = $data['attempts'][$key] ?? ['until'=>$now+300, 'count'=>0];
+    $valid = false;
+    if($attempt['count'] < 5){
+      $attempt['count']++;
+      $step = (int)floor($now / 30);
+      $secretId = hash('sha256', $secret);
+      $valid = preg_match('/^[0-9]{6}$/D', $code) && (($data['used'][$secretId] ?? -1) < $step) && \lib\TOTP::create($secret)->verify($code, $now);
+      if($valid) $data['used'][$secretId] = $step;
+      $data['attempts'][$key] = $attempt;
+    }
+    rewind($fp);
+    if(!ftruncate($fp, 0) || fwrite($fp, json_encode($data)) === false || !fflush($fp)) throw new RuntimeException('验证暂不可用');
+    return (bool)$valid;
+  } finally { flock($fp, LOCK_UN); fclose($fp); }
+}
+
 if(isset($_GET['act']) && $_GET['act']=='login'){
   if(!checkRefererHost())exit('{"code":403}');
+  unset($_SESSION['admin_totp_challenge']);
   $username = trim($_POST['username']);
   $password = trim($_POST['password']);
   $code = trim($_POST['code']);
@@ -22,7 +50,7 @@ if(isset($_GET['act']) && $_GET['act']=='login'){
     exit(json_encode(['code'=>-1,'msg'=>'验证码错误']));
   }
   $errcount = $DB->getColumn("SELECT count(*) FROM `pre_log` WHERE `ip`=:ip AND `date`>DATE_SUB(NOW(),INTERVAL 1 DAY) AND `uid`=0 AND `type`='登录失败'", [':ip'=>$clientip]);
-  if($errcount >= $login_limit_count && file_exists($login_limit_file) && !$conf['totp_open']){
+  if($errcount >= $login_limit_count && file_exists($login_limit_file)){
     exit(json_encode(['code'=>-1,'msg'=>'多次登录失败，暂时禁止登录。可删除@login.lock文件解除限制']));
   }
   if($enc_type == '1'){
@@ -36,10 +64,11 @@ if(isset($_GET['act']) && $_GET['act']=='login'){
   }
   if($username == $conf['admin_user'] && $password == $conf['admin_pwd']){
     if ($conf['totp_open'] == 1 && !empty($conf['totp_secret'])) {
-      if (file_exists($login_limit_file)) {
-          unlink($login_limit_file);
-      }
-      exit(json_encode(['code'=>-1, 'msg'=>'需要验证动态口令', 'vcode' => 2]));
+      session_regenerate_id(true);
+      $challenge = bin2hex(random_bytes(32));
+      $_SESSION['admin_totp_challenge'] = ['token'=>$challenge, 'expires'=>time()+120, 'ip'=>$clientip, 'credential'=>hash('sha256', $conf['admin_user'].$conf['admin_pwd'].$conf['totp_secret']), 'attempts'=>0];
+      unset($_SESSION['vc_code']);
+      exit(json_encode(['code'=>-1, 'msg'=>'需要验证动态口令', 'vcode'=>2, 'challenge'=>$challenge]));
     }
     $DB->insert('log', ['uid'=>0, 'type'=>'登录后台', 'date'=>'NOW()', 'ip'=>$clientip]);
     if (file_exists($login_limit_file)) {
@@ -66,19 +95,27 @@ if(isset($_GET['act']) && $_GET['act']=='login'){
   }
 }elseif(isset($_GET['act']) && $_GET['act']=='totp'){
   if(!checkRefererHost())exit('{"code":403}');
-  $code = trim($_POST['code']);
+  $pending = $_SESSION['admin_totp_challenge'] ?? null;
+  $submitted = $_POST['challenge'] ?? null;
+  if(!is_array($pending) || $pending['expires'] < time() || $pending['ip'] !== $clientip || $pending['attempts'] >= 5 || !is_string($submitted) || !hash_equals($pending['token'], $submitted) || !hash_equals($pending['credential'], hash('sha256', $conf['admin_user'].$conf['admin_pwd'].$conf['totp_secret']))){
+    unset($_SESSION['admin_totp_challenge']);
+    exit(json_encode(['code'=>-1,'msg'=>'请重新验证用户名和密码']));
+  }
+  $_SESSION['admin_totp_challenge']['attempts']++;
+  $code = is_string($_POST['code'] ?? null) ? trim($_POST['code']) : '';
   if (empty($code)) exit(json_encode(['code'=>-1,'msg'=>'请输入动态口令']));
   if ($conf['totp_open'] != 1 || empty($conf['totp_secret'])) {
     exit(json_encode(['code'=>-1,'msg'=>'未启用TOTP二次验证']));
   }
   try {
-    $totp = \lib\TOTP::create($conf['totp_secret']);
-    if (!$totp->verify($code)) {
+    if (!admin_totp_verify_once($code, $conf['totp_secret'], $clientip)) {
       exit(json_encode(['code'=>-1,'msg'=>'动态口令错误']));
     }
   } catch (Exception $e) {
     exit(json_encode(['code'=>-1,'msg'=>$e->getMessage()]));
   }
+  unset($_SESSION['admin_totp_challenge']);
+  session_regenerate_id(true);
   $DB->insert('log', ['uid'=>0, 'type'=>'登录后台', 'date'=>'NOW()', 'ip'=>$clientip]);
   $session=md5($conf['admin_user'].$conf['admin_pwd'].$password_hash);
   $expiretime=time() + 2592000;
@@ -209,6 +246,7 @@ function submitlogin(){
         if(data.vcode==1){
           $("#verifycode").attr('src', './code.php?r='+Math.random())
         }else if(data.vcode==2){
+          window.totpChallenge = data.challenge;
           $("#totp-form").show();
           $("#login-form").hide();
           $("#totp_code").focus();
@@ -231,7 +269,7 @@ function doTotp(){
 		return false;
 	}
 	var ii = layer.load(2, {shade:[0.1,'#fff']});
-	$.post('?act=totp', {code:code}, function(res){
+	$.post('?act=totp', {code:code, challenge:window.totpChallenge}, function(res){
 		layer.close(ii);
 		if(res.code == 0){
 			layer.msg('登录成功，正在跳转', {icon: 1,shade: 0.01,time: 15000});

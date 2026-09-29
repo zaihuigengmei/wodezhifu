@@ -53,6 +53,12 @@ class PayPalClient
         return $this->curl($this->gateway_url . $path);
     }
 
+    // Verification is sent only to the configured PayPal API; never fetch event cert URLs locally.
+    public function verifyWebhook($params){
+        $result = $this->curl($this->gateway_url . '/v1/notifications/verify-webhook-signature', $params);
+        return is_array($result) && ($result['verification_status'] ?? null) === 'SUCCESS';
+    }
+
     //退款
     public function refundPayment($capture_id, $params){
         $path = '/v2/payments/captures/'.$capture_id.'/refund';
@@ -82,6 +88,7 @@ class PayPalClient
 
         $ch = curl_init();
         curl_setopt($ch, CURLOPT_URL, $url);
+        if(!epay_prepare_outbound_curl($ch, $url)){ curl_close($ch); throw new Exception('PayPal outbound target rejected'); }
         curl_setopt($ch, CURLOPT_FAILONERROR, false);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);

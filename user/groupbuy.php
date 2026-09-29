@@ -70,7 +70,8 @@ if($userrow['endtime'] && $mygroup['isbuy']==1) $gexpire.=' [<a href="javascript
 	<div class="col-xs-12">
 
 	<?php if(isset($_GET['ok']) && $_GET['ok']==1){
-	$order_param = $DB->getColumn("SELECT `param` FROM pre_order WHERE trade_no=:trade_no limit 1", [':trade_no'=>$_GET['trade_no']]);
+	$order = epay_result_order($_GET['trade_no'] ?? null, 4, $uid);
+	$order_param = $order ? $order['param'] : null;
 	if($order_param){
 		$order_param = json_decode($order_param, true);
 		$groupname = $DB->getColumn("SELECT name FROM pre_group WHERE gid=:gid", [':gid'=>$order_param['gid']]);

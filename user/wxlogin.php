@@ -9,14 +9,23 @@ if($conf['login_wx']==0)sysmsg("未开启微信快捷登录");
 
 if(isset($_GET['sid'])){
 	$sid = trim(daddslashes($_GET['sid']));
-	if(!preg_match('/^(.[a-zA-Z0-9]+)$/',$sid))exit("Access Denied");
+	if(!preg_match('/^[a-zA-Z0-9,-]{22,128}$/D',$sid))exit("Access Denied");
 	session_id($sid);
 }
 session_start();
+if(isset($_GET['sid']) && (!is_string($_GET['bridge'] ?? null) || empty($_SESSION['oauth_bridge']) || !hash_equals($_SESSION['oauth_bridge'], $_GET['bridge']))) exit('Access Denied');
+if(empty($_SESSION['oauth_bridge'])) $_SESSION['oauth_bridge'] = bin2hex(random_bytes(32));
+if($islogin2==1 && !isset($_GET['code']) && !isset($_GET['act']) && !isset($_GET['unbind']) && isset($_GET['bind'])){
+    $bindStart = $_SESSION['oauth_bind_start'] ?? null;
+    if(!is_array($bindStart) || $bindStart['actor'] !== (string)$uid || $bindStart['provider'] !== 'wx' || $bindStart['expires'] < time()) exit('请从账户设置发起绑定');
+}
+if(!isset($_GET['sid']) && !isset($_GET['code']) && !isset($_GET['act'])) $_SESSION['wxlogin_intent'] = ['actor'=>epay_oauth_actor(), 'expires'=>time()+300];
 
 if(isset($_GET['act']) && $_GET['act']=='login'){
-	if(isset($_SESSION['openid']) && !empty($_SESSION['openid'])){
-		$openId = daddslashes($_SESSION['openid']);
+	$verified = $_SESSION['wxlogin_verified'] ?? null;
+	unset($_SESSION['wxlogin_verified']);
+	if(is_array($verified) && $verified['expires'] >= time() && $verified['actor'] === epay_oauth_actor()){
+		$openId = daddslashes($verified['id']);
 		$userrow=$DB->getRow("SELECT * FROM pre_user WHERE wx_uid='{$openId}' LIMIT 1");
 		if($userrow){
 			$uid=$userrow['uid'];
@@ -24,7 +33,7 @@ if(isset($_GET['act']) && $_GET['act']=='login'){
 			if($islogin2==1){
 				exit('{"code":-1,"msg":"当前微信已绑定商户ID:'.$uid.'，请勿重复绑定！"}');
 			}
-			$session=md5($uid.$key.$password_hash);
+			$session=epay_user_session_digest($userrow);
 			$expiretime=time()+2592000;
 			$token=authcode("{$uid}\t{$session}\t{$expiretime}", 'ENCODE', SYS_KEY);
 			epay_set_cookie("user_token", $token, time() + 2592000, "/user");
@@ -52,6 +61,7 @@ if(!empty($conf['localurl_wxpay']) && !strpos($conf['localurl_wxpay'],$_SERVER['
 if(isset($_GET['bind'])){
 	$code_url .= '&bind=1';
 }
+$code_url .= '&bridge='.rawurlencode($_SESSION['oauth_bridge']);
 
 if($islogin2==1 && isset($_GET['unbind'])){
 	if(!checkRefererHost())exit();
@@ -62,9 +72,11 @@ if($islogin2==1 && isset($_GET['unbind'])){
 }
 elseif(strpos($_SERVER['HTTP_USER_AGENT'], 'MicroMessenger')!==false){
 
-$redirect_url = isset($_GET['url'])?$_GET['url']:null;
+$redirect_url = $_GET['url'] ?? '';
+if(!is_string($redirect_url) || !preg_match('/^[A-Za-z0-9_-]+\.php(?:\?[A-Za-z0-9_=&%.-]*)?$/D', $redirect_url)) $redirect_url = '';
+$redirect_js = json_encode('./'.$redirect_url, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT);
 if($islogin2==1 && !isset($_GET['bind']) && !isset($_GET['code'])){
-	exit("<script language='javascript'>window.location.href='./{$redirect_url}';</script>");
+	exit("<script>window.location.href={$redirect_js};</script>");
 }
 
 if($conf['login_wx']==0)sysmsg("未开启微信快捷登录");
@@ -76,19 +88,24 @@ try{
 }catch(Exception $e){
 	sysmsg($e->getMessage());
 }
-$_SESSION['openid'] = $openId;
+$intent = $_SESSION['wxlogin_intent'] ?? ['actor'=>epay_oauth_actor(), 'expires'=>time()+300];
+if($intent['expires'] < time()) exit('授权已过期');
+$_SESSION['wxlogin_verified'] = ['id'=>$openId, 'actor'=>$intent['actor'], 'expires'=>time()+120];
+if(isset($_GET['sid'])) exit('授权成功，请返回原页面');
+unset($_SESSION['wxlogin_verified']);
 
 	$userrow=$DB->getRow("SELECT * FROM pre_user WHERE wx_uid='{$openId}' limit 1");
 	if($userrow){
 		$uid=$userrow['uid'];
 		$key=$userrow['key'];
+		if($islogin2==1) exit('该微信已绑定商户，请勿重复绑定');
 		$DB->insert('log', ['uid'=>$uid, 'type'=>'微信快捷登录', 'date'=>'NOW()', 'ip'=>$clientip, 'city'=>$city]);
-		$session=md5($uid.$key.$password_hash);
+		$session=epay_user_session_digest($userrow);
 		$expiretime=time()+604800;
 		$token=authcode("{$uid}\t{$session}\t{$expiretime}", 'ENCODE', SYS_KEY);
 		epay_set_cookie("user_token", $token, time() + 604800, "/user");
 		@header('Content-Type: text/html; charset=UTF-8');
-		exit("<script language='javascript'>window.location.href='./{$redirect_url}';</script>");
+		exit("<script>window.location.href={$redirect_js};</script>");
 	}elseif($islogin2==1){
 		$sds=$DB->exec("update `pre_user` set `wx_uid`='$openId' where `uid`='$uid'");
 		@header('Content-Type: text/html; charset=UTF-8');
@@ -160,7 +177,7 @@ $_SESSION['openid'] = $openId;
 <script>
 $(document).ready(function(){
 	$('#qrcode').qrcode({
-        text: "<?php echo $code_url?>",
+        text: <?php echo json_encode($code_url, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT)?>,
         width: 230,
         height: 230,
         foreground: "#000000",

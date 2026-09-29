@@ -72,6 +72,7 @@ include './head.php';
 <script src="<?php echo $cdnpublic?>layer/3.1.1/layer.js"></script>
 <script src="/assets/vendor/xlsx/xlsx.full.min.js"></script>
 <script>
+function escHtml(v){return $('<div>').text(v == null ? '' : String(v)).html();}
 function SelectAll(checkbox) {
 	var isChecked = $(checkbox).is(':checked');
 	$('#list input[type="checkbox"]').prop('checked', isChecked);
@@ -170,18 +171,18 @@ $(function(){
 			if(result.code == 0){
 				// 成功
 				btn.replaceWith(result.status==1?'<font color="green">转账成功</font>':'<font color="green">正在处理</font>');
-				nextRow.find('.result-cell').html('<font color="green">'+result.msg+'</font>');
+				nextRow.find('.result-cell').html('<font color="green">'+escHtml(result.msg)+'</font>');
 				checkbox.prop('checked', false);
 				rescode = true;
 			}else if(result.code == -1){
 				// 收款方原因失败
 				btn.replaceWith('<font color="red">转账失败</font>');
-				nextRow.find('.result-cell').html('<font color="red">'+result.msg+'</font>');
+				nextRow.find('.result-cell').html('<font color="red">'+escHtml(result.msg)+'</font>');
 				checkbox.prop('checked', false);
 				rescode = true;
 			}else{
 				// 付款方原因失败
-				layer.alert(result.msg, {icon: 2, title: '转账失败'});
+				layer.alert(escHtml(result.msg), {icon: 2, title: '转账失败'});
 				btn.show();
 			}
 			

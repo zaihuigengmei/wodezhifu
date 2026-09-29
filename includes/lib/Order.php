@@ -3,39 +3,128 @@ namespace lib;
 
 class Order
 {
-    public static function freeze($trade_no){
-        global $DB;
-        $row = $DB->find('order', 'uid,getmoney,status,channel', ['trade_no'=>$trade_no]);
-        if(!$row)
-            return ['code'=>-1, 'msg'=>'当前订单不存在！'];
-        if($row['status']!=1)
-            return ['code'=>-1, 'msg'=>'只支持冻结已支付状态的订单'];
-        $channel = \lib\Channel::get($row['channel']);
-        if($channel['mode']==1)
-            return ['code'=>-1, 'msg'=>'当前支付通道为商户直清，不支持冻结'];
-        if($row['getmoney']>0){
-            changeUserMoney($row['uid'], $row['getmoney'], false, '订单冻结', $trade_no);
-            $DB->update('order', ['status'=>3], ['trade_no'=>$trade_no]);
+    private static function account($row){
+        if ($row['tid'] == 2) {
+            $param = json_decode($row['param'], true);
+            if (empty($param['uid']) || !ctype_digit((string)$param['uid'])) throw new \RuntimeException('充值订单资金账户无效');
+            return (int)$param['uid'];
         }
-        return ['code'=>0, 'msg'=>'已成功从UID:'.$row['uid'].'冻结'.$row['getmoney'].'元余额'];
+        return $row['uid'];
     }
 
-    public static function unfreeze($trade_no){
-        global $DB;
-        $row = $DB->find('order', 'uid,getmoney,status,channel', ['trade_no'=>$trade_no]);
-        if(!$row)
-            return ['code'=>-1, 'msg'=>'当前订单不存在！'];
-        if($row['status']!=3)
-            return ['code'=>-1, 'msg'=>'只支持解冻已冻结状态的订单'];
-        $channel = \lib\Channel::get($row['channel']);
-        if($channel['mode']==1)
-            return ['code'=>-1, 'msg'=>'当前支付通道为商户直清，不支持冻结'];
-        if($row['getmoney']>0){
-            changeUserMoney($row['uid'], $row['getmoney'], true, '订单解冻', $trade_no);
-            $DB->update('order', ['status'=>1], ['trade_no'=>$trade_no]);
-        }
-        return ['code'=>0, 'msg'=>'已成功为UID:'.$row['uid'].'恢复'.$row['getmoney'].'元余额'];
+    private static function lockedOrder($trade_no, $uid = 0){
+        $row = Finance::row('SELECT * FROM pre_order WHERE trade_no=:trade FOR UPDATE', [':trade'=>$trade_no]);
+        if (!$row || ($uid > 0 && $row['uid'] != $uid)) throw new \RuntimeException('当前订单不存在');
+        return $row;
     }
+
+    private static function pending($trade_no){
+        if (Finance::row('SELECT refund_no FROM pre_refundorder WHERE trade_no=:trade AND status<>1 LIMIT 1 FOR UPDATE', [':trade'=>$trade_no])) {
+            throw new \RuntimeException('订单存在待核对退款，禁止继续资金操作');
+        }
+    }
+
+    public static function freeze($trade_no){ return self::setFrozen($trade_no, true); }
+    public static function unfreeze($trade_no){ return self::setFrozen($trade_no, false); }
+
+    private static function setFrozen($trade_no, $freeze){
+        global $DB;
+        try {
+            return Finance::transaction(function() use ($DB, $trade_no, $freeze){
+                $row = self::lockedOrder($trade_no);
+                self::pending($trade_no);
+                if ((int)$row['status'] !== ($freeze ? 1 : 3)) throw new \RuntimeException('当前订单状态不支持此操作');
+                if (Finance::cents($row['refundmoney'] ?? '0') > 0) throw new \RuntimeException('部分退款订单暂不支持冻结/解冻，需核对');
+                $channel = Finance::row('SELECT mode FROM pre_channel WHERE id=:id', [':id'=>$row['channel']]);
+                if (!$channel || $channel['mode'] == 1) throw new \RuntimeException('通道不存在或商户直清不支持冻结');
+                Finance::change(self::account($row), $row['getmoney'], !$freeze, $freeze ? '订单冻结' : '订单解冻', $trade_no);
+                if (Finance::checked($DB->update('order', ['status'=>$freeze ? 3 : 1], ['trade_no'=>$trade_no])) !== 1) throw new \RuntimeException('订单状态更新失败');
+                return ['code'=>0, 'msg'=>$freeze ? '订单冻结成功' : '订单解冻成功'];
+            });
+        } catch (\Throwable $e) { return ['code'=>-1, 'msg'=>$e->getMessage()]; }
+    }
+
+    private static function refundResult($record, $row){
+        return ['code'=>0, 'refund_no'=>$record['refund_no'], 'out_refund_no'=>$record['out_refund_no'], 'trade_no'=>$record['trade_no'], 'out_trade_no'=>$row['out_trade_no'], 'uid'=>$record['uid'], 'money'=>$record['money'], 'reducemoney'=>$record['reducemoney']];
+    }
+
+    public static function refund($refund_no, $trade_no, $money, $api = 0, $uid = 0, $out_refund_no = null){
+        global $DB, $order, $conf;
+        $gatewayStarted = false;
+        try {
+            if (!is_string($refund_no) || !preg_match('/^[A-Za-z0-9_-]{1,19}$/D', $refund_no)) throw new \RuntimeException('退款单号格式错误');
+            if ($out_refund_no === null) $out_refund_no = $refund_no;
+            if (!is_string($out_refund_no) || !preg_match('/^[A-Za-z0-9_-]{1,150}$/D', $out_refund_no)) throw new \RuntimeException('商户退款单号格式错误');
+            $cents = Finance::cents($money);
+            if ($cents <= 0) throw new \RuntimeException('退款金额必须大于零');
+            // Gateway intent must be durable, not nested in an uncommitted caller transaction.
+            if ($DB->db->inTransaction()) throw new \RuntimeException('退款必须在独立事务中调用');
+            $prepared = Finance::transaction(function() use ($DB, $refund_no, $out_refund_no, $trade_no, $cents, $uid, $api, &$order, $conf){
+                $order = self::lockedOrder($trade_no, $uid);
+                $account = self::account($order);
+                // Also serializes out_refund_no across different orders of the same merchant.
+                if (!Finance::row('SELECT uid FROM pre_user WHERE uid=:uid FOR UPDATE', [':uid'=>$order['uid']])) throw new \RuntimeException('商户不存在');
+                $existing = Finance::row('SELECT * FROM pre_refundorder WHERE refund_no=:refund OR (uid=:uid AND out_refund_no=:outno) LIMIT 1 FOR UPDATE', [':refund'=>$refund_no, ':uid'=>$order['uid'], ':outno'=>$out_refund_no]);
+                if ($existing) {
+                    if ($existing['trade_no'] !== $trade_no || Finance::cents($existing['money']) !== $cents || $existing['out_refund_no'] !== $out_refund_no) throw new \RuntimeException('退款单号已用于不同请求');
+                    if ((int)$existing['status'] !== 1) throw new \RuntimeException('退款处理中或结果待核对，禁止重复请求');
+                    return ['done'=>self::refundResult($existing, $order)];
+                }
+                self::pending($trade_no);
+                if (!in_array((int)$order['status'], [1,2,3], true)) throw new \RuntimeException('该订单状态不支持退款');
+                $total = Finance::cents($order['realmoney']);
+                $refunded = Finance::cents($order['refundmoney'] ?? '0');
+                if ($order['status'] == 2 && $refunded === 0) throw new \RuntimeException('历史退款缺少累计金额，需人工核对');
+                if ($cents > $total - $refunded) throw new \RuntimeException('退款金额超过剩余可退金额');
+                $channel = Finance::row('SELECT mode FROM pre_channel WHERE id=:id', [':id'=>$order['channel']]);
+                if (!$channel) throw new \RuntimeException('支付通道不存在');
+                if ($api == 1 && empty($order['api_trade_no'])) throw new \RuntimeException('接口订单号不存在');
+                $get = Finance::cents($order['getmoney']);
+                // Fee-free refund liability is capped cumulatively, not per request.
+                $fee = !empty($conf['refund_fee_type']);
+                $reduce = $channel['mode'] == 1 ? 0 : ($fee ? $cents : min($refunded + $cents, $get) - min($refunded, $get));
+                $release = $order['status'] == 3 ? $get : 0;
+                if ($release && $refunded) throw new \RuntimeException('历史冻结退款订单需人工核对');
+                $user = Finance::row('SELECT money FROM pre_user WHERE uid=:uid FOR UPDATE', [':uid'=>$account]);
+                if (!$user) throw new \RuntimeException('资金账户不存在');
+                if ($uid > 0 && Finance::cents($user['money'], true) + $release < $reduce) throw new \RuntimeException('商户余额不足，请先充值');
+                $record = ['refund_no'=>$refund_no, 'out_refund_no'=>$out_refund_no, 'trade_no'=>$trade_no, 'uid'=>$order['uid'], 'money'=>Finance::amount($cents), 'reducemoney'=>Finance::amount($reduce), 'addtime'=>date('Y-m-d H:i:s'), 'status'=>0];
+                Finance::checked($DB->insert('refundorder', $record));
+                $plan = ['record'=>$record, 'account'=>$account, 'release'=>$release, 'refundmoney'=>$refunded + $cents, 'mode'=>$channel['mode'], 'fee'=>$fee, 'total'=>$total];
+                if ($api != 1) return ['done'=>self::finishRefund($plan, $order, $uid)];
+                return $plan;
+            });
+            if (isset($prepared['done'])) return $prepared['done'];
+            // A persisted status=0 intent blocks retries even after process/connection death.
+            $gatewayStarted = true;
+            $message = null;
+            if (!Plugin::refund($refund_no, $trade_no, Finance::amount($cents), $message)) {
+                return ['code'=>-2, 'msg'=>'网关退款未确认，已保留待核对记录；禁止自动重试', 'refund_no'=>$refund_no];
+            }
+            return Finance::transaction(function() use ($prepared, $trade_no, $uid, &$order){
+                $order = self::lockedOrder($trade_no, $uid);
+                return self::finishRefund($prepared, $order, $uid);
+            });
+        } catch (\Throwable $e) {
+            return ['code'=>$gatewayStarted ? -2 : -1, 'msg'=>$gatewayStarted ? '网关已调用但本地未确认，必须人工核对，禁止重试' : $e->getMessage(), 'refund_no'=>$refund_no];
+        }
+    }
+
+    private static function finishRefund($plan, $row, $uid){
+        global $DB;
+        $record = $plan['record'];
+        $trade = $record['trade_no'];
+        if ($plan['release'] > 0) Finance::change($plan['account'], Finance::amount($plan['release']), true, '退款释放冻结', $trade);
+        Finance::change($plan['account'], $record['reducemoney'], false, '订单退款', $trade, $uid > 0);
+        if ($plan['mode'] == 1 && !$plan['fee'] && $plan['refundmoney'] >= $plan['total']) {
+            $feeRecord = Finance::row("SELECT money FROM pre_record WHERE uid=:uid AND trade_no=:trade AND type IN ('订单服务费','在线收款服务费') LIMIT 1 FOR UPDATE", [':uid'=>$plan['account'], ':trade'=>$trade]);
+            if ($feeRecord) Finance::change($plan['account'], $feeRecord['money'], true, '服务费退款', $trade);
+        }
+        if (Finance::checked($DB->update('order', ['status'=>2, 'refundmoney'=>Finance::amount($plan['refundmoney'])], ['trade_no'=>$trade])) !== 1) throw new \RuntimeException('订单退款累计更新失败');
+        if (Finance::checked($DB->update('refundorder', ['status'=>1, 'endtime'=>date('Y-m-d H:i:s')], ['refund_no'=>$record['refund_no'], 'status'=>0])) !== 1) throw new \RuntimeException('退款记录确认失败');
+        return self::refundResult($record, $row);
+    }
+
 
     public static function refund_info($trade_no, $api = 0, $uid = 0){
         global $DB;
@@ -60,78 +149,6 @@ class Order
         }
 
         return ['code'=>0, 'money'=>$money];
-    }
-
-    public static function refund($refund_no, $trade_no, $money, $api = 0, $uid = 0, $out_refund_no = null){
-        global $DB, $order, $conf;
-
-        $where = ['trade_no'=>$trade_no];
-        if($uid > 0) $where['uid'] = $uid;
-        $order = $DB->find('order', '*', $where);
-        if(!$order)
-            return ['code'=>-1, 'msg'=>'当前订单不存在！'];
-        if(!in_array($order['status'], [1,2,3]))
-            return ['code'=>-1, 'msg'=>'该订单状态不支持退款！'];
-        if(empty($money)) $money = $order['realmoney'];
-        if($money>$order['realmoney']) return ['code'=>-1, 'msg'=>'退款金额不能大于订单金额'];
-        if(!$order['api_trade_no']) return ['code'=>-1, 'msg'=>'接口订单号不存在'];
-        if($order['status'] == 2 && empty($order['refundmoney'])) return ['code'=>-1, 'msg'=>'该订单已退款！'];
-        if($order['status'] == 2 && $order['refundmoney'] > 0 && $order['refundmoney'] >= $order['realmoney']) return ['code'=>-1, 'msg'=>'该订单已全额退款！'];
-        if($order['status'] == 2 && $order['refundmoney'] > 0 && $money > round($order['realmoney'] - $order['refundmoney'], 2) ||$money > $order['realmoney']) return ['code'=>-1, 'msg'=>'退款金额不能超过该订单剩余可退款金额！'];
-        $refunded = $order['refundmoney'];
-
-        if(!$out_refund_no) $out_refund_no = $refund_no;
-
-        $mode = $DB->findColumn('channel', 'mode', ['id'=>$order['channel']]);
-        if($order['status'] == 3 || $mode == 1){
-            $reducemoney = 0;
-        }elseif($conf['refund_fee_type']==1 && $money == $order['realmoney']){
-            $reducemoney = $order['realmoney'];
-        }elseif(!$conf['refund_fee_type'] && ($money == $order['realmoney'] || $money >= $order['getmoney'])){
-            $reducemoney = $order['getmoney'];
-        }else{
-            $reducemoney = $money;
-        }
-
-        if($uid > 0 && $reducemoney > 0){
-            $usermoney = $DB->findColumn('user', 'money', ['uid'=>$uid]);
-            if($reducemoney > $usermoney){
-                return ['code'=>-1, 'msg'=>'商户余额不足，请先充值'];
-            }
-        }
-
-        if($api == 1){
-            $message = null;
-            if(!\lib\Plugin::refund($refund_no, $trade_no, $money, $message)){
-                return ['code'=>-1, 'msg'=>'退款失败：'.$message];
-            }
-        }
-        if($reducemoney > 0){
-            if($order['tid'] == 2){
-                $param = json_decode($order['param'], true);
-                if(isset($param['uid'])){
-                    $order['uid'] = $param['uid'];
-                }
-            }
-            changeUserMoney($order['uid'], $reducemoney, false, '订单退款', $trade_no);
-        }
-        $refundmoney = !empty($refunded) ? round($refunded + $money, 2) : $money;
-        if($mode == 1 && !$conf['refund_fee_type'] && $refundmoney >= $order['realmoney']){
-            $record = $DB->getRow("SELECT * FROM pre_record WHERE trade_no='{$trade_no}' AND (type='订单服务费' OR type='在线收款服务费') LIMIT 1");
-            if($record){
-                $addmoney = $record['money'];
-                changeUserMoney($order['uid'], $addmoney, true, '服务费退款', $trade_no);
-            }
-        }
-
-        if($api == 1){
-            $DB->update('order', ['status'=>2, 'refundmoney'=>$refundmoney], ['trade_no'=>$trade_no]);
-            $DB->insert('refundorder', ['refund_no'=>$refund_no, 'out_refund_no'=>$out_refund_no, 'trade_no'=>$trade_no, 'uid'=>$order['uid'], 'money'=>$money, 'reducemoney'=>$reducemoney, 'addtime'=>date('Y-m-d H:i:s'), 'endtime'=>date('Y-m-d H:i:s'), 'status'=>1]);
-        }else{
-            $DB->update('order', ['status'=>2], ['trade_no'=>$trade_no]);
-        }
-        
-        return ['code'=>0, 'refund_no'=>$refund_no, 'out_refund_no'=>$out_refund_no, 'trade_no'=>$trade_no, 'out_trade_no'=>$order['out_trade_no'], 'uid'=>$order['uid'], 'money'=>$money, 'reducemoney'=>$reducemoney];
     }
 
     public static function close($trade_no, $uid = 0){

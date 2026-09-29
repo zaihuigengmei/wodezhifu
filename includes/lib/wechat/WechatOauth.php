@@ -26,13 +26,14 @@ class WechatOauth
      */
     public function login()
     {
+        if(session_status() !== PHP_SESSION_ACTIVE) session_start();
         $redirect_uri = (is_https() ? 'https://' : 'http://') . $_SERVER['HTTP_HOST'] . $_SERVER['REQUEST_URI'];
         $param = [
             "appid" => $this->appid,
             "redirect_uri" => $redirect_uri,
             "response_type" => "code",
             "scope" => "snsapi_base",
-            "state" => "STATE"
+            "state" => epay_oauth_issue('wechat:'.$this->appid, $this->stateContext())
         ];
         $url = $this->openurl . '/connect/oauth2/authorize?' . http_build_query($param) . "#wechat_redirect";
         Header("Location: $url");
@@ -48,6 +49,8 @@ class WechatOauth
 	 */
     public function GetOpenidFromMp(string $code): string
     {
+        if(session_status() !== PHP_SESSION_ACTIVE) session_start();
+        epay_oauth_consume('wechat:'.$this->appid, $_GET['state'] ?? null, $this->stateContext());
         $param = [
             "appid" => $this->appid,
             "secret" => $this->appsecret,
@@ -73,6 +76,13 @@ class WechatOauth
 	 * @return string openid
 	 * @throws Exception
 	 */
+    private function stateContext(){
+        $query = $_GET;
+        unset($query['code'], $query['state']);
+        ksort($query);
+        return (parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH) ?: '').'?'.http_build_query($query);
+    }
+
     public function AppGetOpenid(string $code): string
     {
         $param = [

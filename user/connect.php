@@ -3,35 +3,19 @@
  * QQ互联
 **/
 include("../includes/common.php");
+if($islogin2==1 && !isset($_GET['code']) && !isset($_GET['act']) && !isset($_GET['unbind']) && isset($_GET['bind'])){
+    $bindStart = $_SESSION['oauth_bind_start'] ?? null;
+    if(!is_array($bindStart) || $bindStart['actor'] !== (string)$uid || $bindStart['provider'] !== 'qq' || $bindStart['expires'] < time()) exit('请从账户设置发起绑定');
+}
 
-if(isset($_GET['act']) && $_GET['act']=='qrlogin' && $conf['login_qq']==2){
-	if(isset($_SESSION['findpwd_qq']) && $qq=$_SESSION['findpwd_qq']){
-		$userrow=$DB->getRow("SELECT * FROM pre_user WHERE qq_uid=:qq LIMIT 1", [':qq'=>$qq]);
-		unset($_SESSION['findpwd_qq']);
-		if($userrow){
-			$uid=$userrow['uid'];
-			$key=$userrow['key'];
-			if($islogin2==1){
-				exit('{"code":-1,"msg":"当前QQ已绑定商户ID:'.$uid.'，请勿重复绑定！"}');
-			}
-			$DB->insert('log', ['uid'=>$uid, 'type'=>'QQ快捷登录', 'date'=>'NOW()', 'ip'=>$clientip, 'city'=>$city]);
-			$session=md5($uid.$key.$password_hash);
-			$expiretime=time()+2592000;
-			$token=authcode("{$uid}\t{$session}\t{$expiretime}", 'ENCODE', SYS_KEY);
-			epay_set_cookie("user_token", $token, time() + 2592000, "/user");
-			$DB->exec("update `pre_user` set `lasttime`=NOW() where `uid`='$uid'");
-			$result=array("code"=>0,"msg"=>"登录成功！正在跳转到用户中心","url"=>"./");
-		}elseif($islogin2==1){
-			$sds=$DB->exec("update `pre_user` set `qq_uid`=:qq where `uid`=:uid", [':qq'=>$qq, ':uid'=>$uid]);
-			$result=array("code"=>0,"msg"=>"已成功绑定QQ账号！","url"=>"./editinfo.php");
-		}else{
-			$_SESSION['Oauth_qq_uid']=$openId;
-			$result=array("code"=>0,"msg"=>"请输入商户ID和密钥完成绑定和登录","url"=>"./login.php?connect=true");
-		}
-	}else{
-		$result=array("code"=>-1, "msg"=>"验证失败，请重新扫码");
-	}
-	exit(json_encode($result));
+// Legacy qrlogin.php accepts a client-supplied qrsig and writes a shared,
+// timeless recovery slot, not a session/actor-bound authentication proof.
+// Do not consume it for login or binding; use official QQ OAuth (1/3).
+if((isset($_GET['act']) && $_GET['act']==='qrlogin') ||
+    ($conf['login_qq']==2 && !isset($_GET['code']) && !isset($_GET['unbind']))){
+    unset($_SESSION['findpwd_qq']);
+    header('Content-Type: application/json; charset=UTF-8');
+    exit(json_encode(['code'=>-1, 'msg'=>'旧版QQ扫码登录已停用，请使用账号密码或联系管理员配置QQ官方/聚合OAuth登录']));
 }
 
 $QC_config['appid']=$conf['login_qq_appid'];
@@ -51,6 +35,7 @@ if($_GET['code'] && ($conf['login_qq']==1 || $conf['login_qq']==3 || $conf['logi
 		$typecolumn = 'qq_uid';
 	}else{
 		$type = isset($_GET['type'])?$_GET['type']:exit('{"code":-1,"msg":"no type"}');
+		if(!is_string($type) || !in_array($type, ['qq','wx','alipay'], true)) exit('Invalid OAuth type');
 		if($type == 'qq'){
 			$typename = 'QQ';
 			$typecolumn = 'qq_uid';
@@ -82,7 +67,7 @@ if($_GET['code'] && ($conf['login_qq']==1 || $conf['login_qq']==3 || $conf['logi
 			exit("<script language='javascript'>alert('当前{$typename}已绑定商户ID:{$uid}，请勿重复绑定！');window.location.href='./editinfo.php';</script>");
 		}
 		$DB->insert('log', ['uid'=>$uid, 'type'=>$typename.'快捷登录', 'date'=>'NOW()', 'ip'=>$clientip, 'city'=>$city]);
-		$session=md5($uid.$key.$password_hash);
+		$session=epay_user_session_digest($userrow);
 		$expiretime=time()+2592000;
 		$token=authcode("{$uid}\t{$session}\t{$expiretime}", 'ENCODE', SYS_KEY);
 		epay_set_cookie("user_token", $token, time() + 2592000, "/user");
