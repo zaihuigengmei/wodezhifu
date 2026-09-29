@@ -460,8 +460,32 @@ case 'edit_print':
 	}
 break;
 case 'edit_channel_info':
-	$setting=$_POST['setting'];
-	$channelinfo = json_encode($setting);
+	if(($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST'){
+		http_response_code(405);
+		header('Allow: POST');
+		exit('{"code":-1,"msg":"仅接受POST请求"}');
+	}
+	if((string)($conf['user_settings_edit'] ?? '0') !== '1') exit('{"code":-1,"msg":"未开放自定义接口信息编辑"}');
+	$group_settings=$DB->getColumn('SELECT settings FROM pre_group WHERE gid=:gid LIMIT 1', [':gid'=>$userrow['gid']]);
+	if(!$group_settings) $group_settings=$DB->getColumn('SELECT settings FROM pre_group WHERE gid=0 LIMIT 1');
+	if(!is_string($group_settings) || trim($group_settings)==='') exit('{"code":-1,"msg":"当前用户组未配置可编辑的接口变量"}');
+	$allowed=[];
+	foreach(explode(',', $group_settings) as $item){
+		$parts=explode(':', $item, 2);
+		$key=trim($parts[0]);
+		if(count($parts)!==2 || !preg_match('/^[A-Za-z_][A-Za-z0-9_]{0,63}$/D', $key) || isset($allowed[$key])) exit('{"code":-1,"msg":"用户组接口变量配置无效"}');
+		$allowed[$key]=true;
+	}
+	$setting=$_POST['setting'] ?? null;
+	if(!is_array($setting) || !$setting || count($setting)>count($allowed)) exit('{"code":-1,"msg":"接口变量参数不合法"}');
+	foreach($setting as $key=>$value){
+		if(!is_string($key) || !isset($allowed[$key]) || !is_string($value) || strlen($value)>2048 || trim($value)==='') exit('{"code":-1,"msg":"包含未授权或无效的接口变量"}');
+	}
+	$channelinfo=json_decode((string)($userrow['channelinfo'] ?? ''), true);
+	if(!is_array($channelinfo) || array_is_list($channelinfo)) $channelinfo=[];
+	foreach($setting as $key=>$value) $channelinfo[$key]=$value;
+	$channelinfo=json_encode($channelinfo, JSON_INVALID_UTF8_SUBSTITUTE);
+	if($channelinfo===false) exit('{"code":-1,"msg":"接口信息编码失败"}');
 
 	$sqs=$DB->update('user', ['channelinfo'=>$channelinfo], ['uid'=>$uid]);
 	if($sqs!==false){
