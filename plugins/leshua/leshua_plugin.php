@@ -364,17 +364,27 @@ class leshua_plugin
 		$arr = self::xml2array($json);
 		if(!$arr) return ['type'=>'html','data'=>'No data'];
 
+		// Official amount/MD5 notification contract. Legacy account has no verified contract.
+		if(($arr['sign_type'] ?? null) !== 'MD5' || !is_string($arr['sign'] ?? null)) return ['type'=>'html','data'=>'fail'];
+		foreach($arr as &$value){
+			// SimpleXML represents an empty element as []; empty values still sign.
+			if($value === []) $value = '';
+			elseif(!is_string($value) && !is_int($value)) return ['type'=>'html','data'=>'fail'];
+		}
+		unset($value);
 		$sign = strtolower(self::make_sign($arr, $channel['appsecret']));
 
-		if($sign === $arr["sign"]){
-			if($arr['status'] == '2'){
-				$out_trade_no = $arr['third_order_id'];
-				$api_trade_no = $arr['leshua_order_id'];
-				$money = $arr['account'];
-				$buyer = $arr['sub_openid'];
-				$bill_trade_no = $arr['out_transaction_id'];
+		if(hash_equals($sign, $arr['sign'])){
+			if(($arr['status'] ?? null) === '2'){
+				$out_trade_no = $arr['third_order_id'] ?? null;
+				$api_trade_no = $arr['leshua_order_id'] ?? null;
+				$money = $arr['amount'] ?? null;
+				$buyer = $arr['sub_openid'] ?? null;
+				$bill_trade_no = $arr['out_transaction_id'] ?? null;
 	
-				if ($out_trade_no == TRADE_NO && epay_callback_money_match($money, $order['realmoney'])) {
+				if ($out_trade_no === TRADE_NO && ($arr['merchant_id'] ?? null) === (string)$channel['appid']
+					&& is_string($api_trade_no) && $api_trade_no !== ''
+					&& epay_callback_cent_match($money, $order['realmoney'])) {
 					processNotify($order, $api_trade_no, $buyer, $bill_trade_no);
 				}
 			}

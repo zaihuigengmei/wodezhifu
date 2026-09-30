@@ -222,91 +222,17 @@ break;
 
 
 case 'submit':
-	$id=intval($_POST['id']);
-	$row = $DB->getRow("SELECT A.*,B.channel,B.account,B.name,B.rate,B.info,B.uid psuid,C.uid,C.subchannel,C.realmoney ordermoney FROM pre_psorder A LEFT JOIN pre_psreceiver B ON A.rid=B.id LEFT JOIN pre_order C ON C.trade_no=A.trade_no WHERE A.id=:id", [':id'=>$id]);
-	if(!$row)exit('{"code":-1,"msg":"订单不存在"}');
-	if($row['status']!=0&&$row['status']!=3)exit('{"code":-1,"msg":"只有待分账的订单才能提交分账"}');
-	$channel = $row['subchannel'] > 0 ? \lib\Channel::getSub($row['subchannel']) : \lib\Channel::get($row['channel'], $row['uid']?$DB->findColumn('user', 'channelinfo', ['uid'=>$row['uid']]):null);
-	if(!$channel) exit('{"code":-1,"msg":"通道信息不存在"}');
-	$model = \lib\ProfitSharing\CommUtil::getModel($channel);
-	$row['info'] = !empty($row['info']) ? json_decode($row['info'], true) : [['account'=>$row['account'], 'name'=>$row['name'], 'rate'=>$row['rate']]];
-	if(!empty($row['sub_trade_no'])){
-		$row['ordermoney'] = $DB->findColumn('suborder', 'money', ['sub_trade_no'=>$row['sub_trade_no']]);
-		$row['trade_no'] = $row['sub_trade_no'];
-	}
-	$result = $model->submit($row['trade_no'], $row['api_trade_no'], $row['ordermoney'], $row['info']);
-	if($result['code'] == 0){
-		$DB->update('psorder', ['status'=>1,'settle_no'=>$result['settle_no']], ['id'=>$id]);
-	}elseif($result['code'] == 1){
-		$DB->update('psorder', ['status'=>2,'settle_no'=>$result['settle_no']], ['id'=>$id]);
-		if(!empty($row['psuid']) && $channel['mode']==0){
-			changeUserMoney($row['psuid'], $row['money'], false, '订单分账', $row['trade_no']);
-		}
-	}elseif($result['code'] == -2){
-		//$DB->update('psorder', ['status'=>3,'result'=>$result['msg']], ['id'=>$id]);
-	}
-	if(isset($result['rdata'])){
-		$DB->update('psorder', ['money'=>$result['money'], 'rdata'=>json_encode($result['rdata'])], ['id'=>$id]);
-	}
-	exit(json_encode($result));
+    exit(json_encode(\lib\ProfitSharing\CommUtil::operate(intval($_POST['id']),'submit')));
 break;
-
 case 'query':
-	$id=intval($_POST['id']);
-	$row = $DB->getRow("SELECT A.*,B.channel,B.uid psuid,C.uid,C.subchannel FROM pre_psorder A LEFT JOIN pre_psreceiver B ON A.rid=B.id LEFT JOIN pre_order C ON C.trade_no=A.trade_no WHERE A.id=:id", [':id'=>$id]);
-	if(!$row)exit('{"code":-1,"msg":"订单不存在"}');
-	if($row['status']!=1)exit('{"code":-1,"msg":"只有已提交的订单才能查询结果"}');
-	$channel = $row['subchannel'] > 0 ? \lib\Channel::getSub($row['subchannel']) : \lib\Channel::get($row['channel'], $row['uid']?$DB->findColumn('user', 'channelinfo', ['uid'=>$row['uid']]):null);
-	if(!$channel) exit('{"code":-1,"msg":"通道信息不存在"}');
-	$model = \lib\ProfitSharing\CommUtil::getModel($channel);
-	if(!empty($row['sub_trade_no'])) $row['trade_no'] = $row['sub_trade_no'];
-	$result = $model->query($row['trade_no'], $row['api_trade_no'], $row['settle_no']);
-	if($result['code']==0){
-		if($result['status']==1){
-			$DB->update('psorder', ['status'=>2], ['id'=>$id]);
-			if(!empty($row['psuid']) && $channel['mode']==0){
-				changeUserMoney($row['psuid'], $row['money'], false, '订单分账', $row['trade_no']);
-			}
-		}elseif($result['status']==2){
-			$DB->update('psorder', ['status'=>3,'result'=>$result['reason']], ['id'=>$id]);
-		}
-	}
-	exit(json_encode($result));
+    exit(json_encode(\lib\ProfitSharing\CommUtil::operate(intval($_POST['id']),'query')));
 break;
-
 case 'unfreeeze':
-	$id=intval($_POST['id']);
-	$row = $DB->getRow("SELECT A.*,B.channel,C.uid,C.subchannel FROM pre_psorder A LEFT JOIN pre_psreceiver B ON A.rid=B.id LEFT JOIN pre_order C ON C.trade_no=A.trade_no WHERE A.id=:id", [':id'=>$id]);
-	if(!$row)exit('{"code":-1,"msg":"订单不存在"}');
-	if($row['status']==2)exit('{"code":-1,"msg":"只有待分账的订单才能取消分账"}');
-	$channel = $row['subchannel'] > 0 ? \lib\Channel::getSub($row['subchannel']) : \lib\Channel::get($row['channel'], $row['uid']?$DB->findColumn('user', 'channelinfo', ['uid'=>$row['uid']]):null);
-	if(!$channel) exit('{"code":-1,"msg":"通道信息不存在"}');
-	$model = \lib\ProfitSharing\CommUtil::getModel($channel);
-	if(!empty($row['sub_trade_no'])) $row['trade_no'] = $row['sub_trade_no'];
-	$result = $model->unfreeeze($row['trade_no'], $row['api_trade_no']);
-	if($result['code'] == 0){
-		$DB->update('psorder', ['status'=>4], ['id'=>$id]);
-	}
-	exit(json_encode($result));
+    exit(json_encode(\lib\ProfitSharing\CommUtil::reversal(intval($_POST['id']),'unfreeeze')));
 break;
-
 case 'return':
-	$id=intval($_POST['id']);
-	$row = $DB->getRow("SELECT A.*,B.channel,C.uid,C.subchannel FROM pre_psorder A LEFT JOIN pre_psreceiver B ON A.rid=B.id LEFT JOIN pre_order C ON C.trade_no=A.trade_no WHERE A.id=:id", [':id'=>$id]);
-	if(!$row)exit('{"code":-1,"msg":"订单不存在"}');
-	if($row['status']!=2)exit('{"code":-1,"msg":"只有分账成功的订单才能回退"}');
-	$channel = $row['subchannel'] > 0 ? \lib\Channel::getSub($row['subchannel']) : \lib\Channel::get($row['channel'], $row['uid']?$DB->findColumn('user', 'channelinfo', ['uid'=>$row['uid']]):null);
-	if(!$channel) exit('{"code":-1,"msg":"通道信息不存在"}');
-	$model = \lib\ProfitSharing\CommUtil::getModel($channel);
-	$row['rdata'] = json_decode($row['rdata'], true) ?? [];
-	if(!empty($row['sub_trade_no'])) $row['trade_no'] = $row['sub_trade_no'];
-	$result = $model->return($row['trade_no'], $row['api_trade_no'], $row['settle_no'], $row['rdata']);
-	if($result['code'] == 0){
-		$DB->update('psorder', ['status'=>4], ['id'=>$id]);
-	}
-	exit(json_encode($result));
+    exit(json_encode(\lib\ProfitSharing\CommUtil::reversal(intval($_POST['id']),'return')));
 break;
-
 case 'amount':
 	$id=intval($_POST['id']);
 	$row = $DB->getRow("SELECT A.*,B.channel,B.uid psuid,C.uid,C.subchannel FROM pre_psorder A LEFT JOIN pre_psreceiver B ON A.rid=B.id LEFT JOIN pre_order C ON C.trade_no=A.trade_no WHERE A.id=:id", [':id'=>$id]);
@@ -322,25 +248,33 @@ break;
 case 'editmoney':
 	$id=intval($_POST['id']);
 	$money=trim($_POST['money']);
-	if(!is_numeric($money) || !preg_match('/^[0-9.]+$/', $money))exit('{"code":-1,"msg":"金额输入错误"}');
-	$row = $DB->getRow("SELECT * FROM pre_psorder WHERE id=:id", [':id'=>$id]);
-	if(!$row)exit('{"code":-1,"msg":"订单不存在"}');
-	if($row['status']!=0)exit('{"code":-1,"msg":"只有待分账的订单才能修改金额"}');
-	$DB->update('psorder', ['money'=>$money], ['id'=>$id]);
-	exit('{"code":0,"msg":"succ"}');
+	if(!preg_match('/^\\d{1,8}(?:\\.\\d{1,2})?$/D',$money) || \lib\Finance::cents($money)<=0)exit('{"code":-1,"msg":"金额输入错误"}');
+    try {
+        \lib\Finance::transaction(function() use($DB,$id,$money){
+            $row=\lib\Finance::row('SELECT * FROM pre_psorder WHERE id=:id FOR UPDATE',[':id'=>$id]);
+            if(!$row || (int)$row['status']!==0)throw new \RuntimeException('分账已认领，金额不可更改');
+            if($DB->find('funds_snapshot','event_key',['event_key'=>'ps:'.$id]))throw new \RuntimeException('分账已有不可变快照');
+            \lib\Finance::checked($DB->update('psorder',['money'=>$money],['id'=>$id,'status'=>0]));
+        });exit(json_encode(['code'=>0,'msg'=>'succ']));
+    }catch(\Throwable $e){exit(json_encode(['code'=>-2,'msg'=>'金额未修改，原分账已认领或需核对']));}
 break;
 
 case 'operation': //批量操作订单
-	$status=is_numeric($_POST['status'])?intval($_POST['status']):exit('{"code":-1,"msg":"请选择操作"}');
-	$checkbox=$_POST['checkbox'];
-	$i=0;
-	foreach($checkbox as $id){
-		$id = intval($id);
-		if($status==5)$DB->exec("DELETE FROM pre_psorder WHERE id='$id'");
-		else $DB->exec("update pre_psorder set status='$status' where id='$id' limit 1");
-		$i++;
-	}
-	exit('{"code":0,"msg":"成功改变'.$i.'条订单状态"}');
+    $status=intval($_POST['status']);$i=0;
+    foreach((array)($_POST['checkbox']??[]) as $id){
+        $id=(int)$id;
+        if($status==5){
+            // Archive, never erase the external intent or enable a second submission.
+            $n=\lib\Finance::checked($DB->exec("UPDATE pre_psorder SET result='已归档（保留资金凭证）' WHERE id=:id AND status IN (2,3,4)",[':id'=>$id]));
+            $i+=$n;continue;
+        }
+        if($status==4) $r=\lib\ProfitSharing\CommUtil::reversal($id,'unfreeeze');
+        elseif($status==1 || $status==2) $r=\lib\ProfitSharing\CommUtil::operate($id,$status==1?'submit':'query');
+        else $r=['code'=>-2,'msg'=>'原资金交易不能直接重置，请先核对供应商终态'];
+        if(($r['code']??-1)<0)exit(json_encode(['code'=>-2,'msg'=>$r['msg']??'批量处理未完成','completed'=>$i]));
+        $i++;
+    }
+    exit(json_encode(['code'=>0,'msg'=>'已处理'.$i.'条资金记录']));
 break;
 
 case 'statistics':

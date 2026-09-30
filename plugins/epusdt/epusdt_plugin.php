@@ -53,13 +53,19 @@ class epusdt_plugin
 
     public static function submit(): array
     {
+        require_once __DIR__.'/Checkout.php';
+        return epusdtCheckout::run(static function () { return self::createPayment(); }, false);
+    }
+
+    private static function createPayment(): array
+    {
         global $siteurl, $channel, $order, $conf, $DB;
+        foreach ($channel as $value) { if ($value !== null && !is_scalar($value)) return ['type'=>'error','msg'=>'Invalid channel configuration']; }
+        if (!is_string($order['realmoney']) && !is_int($order['realmoney'])) return ['type'=>'error','msg'=>'Invalid fiat amount'];
+        if (!preg_match('/\A[0-9]+(?:\.[0-9]{1,2})?\z/', (string)$order['realmoney'])) return ['type'=>'error','msg'=>'Invalid fiat amount'];
 
         // Sub2API/外部系统可能会重复打开同一笔 Epay 订单。
         // 兼容跳转模式也复用本地已保存的支付入口，避免重复生成同一订单的跳转请求。
-        if (!empty($order['payurl'])) {
-            return ['type' => 'jump', 'url' => $order['payurl']];
-        }
 
         $parameter = [
             'pid'          => trim($channel['appid']),
@@ -75,7 +81,6 @@ class epusdt_plugin
 
         $submitUrl = self::gateway($channel['appurl']) . '/payments/epay/v1/order/create-transaction/submit.php';
         $payUrl = $submitUrl . '?' . http_build_query($parameter);
-        $DB->update('order', ['payurl' => $payUrl], ['trade_no' => TRADE_NO]);
         return ['type' => 'jump', 'url' => $payUrl];
     }
 

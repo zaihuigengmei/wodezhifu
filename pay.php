@@ -14,7 +14,7 @@ if (function_exists("ignore_user_abort"))
 	@ignore_user_abort(true);
 }
 
-$sitename=isset($_GET['sitename'])?base64_decode($_GET['sitename']):'';
+$sitename=is_string($_GET['sitename'] ?? null)?base64_decode($_GET['sitename'], true):'';
 $submit2=true;
 
 try{

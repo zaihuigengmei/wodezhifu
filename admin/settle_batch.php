@@ -129,7 +129,7 @@ $(document).ready(function(){
 				self.html('<font color="red">失败</font>');
 				alert(d.msg);
 			}else{
-				self.html('<font color="red">失败</font>');
+				self.html('<font color="orange">付款待核对，请查询原交易</font>');
 			}
 		});
 	});
@@ -170,7 +170,7 @@ $(document).ready(function(){
 			echo '<tr><td colspan="6" align="center">总共<span id="allnum">'.count($list).'<span>个记录,已经处理<span id="donenum">0</span>个记录！</td></tr>';
 			foreach($list as $row) {
 			$result_text = $row['transfer_status']==1 ? '转账订单号:'.$row['transfer_result'].' 支付时间:'.$row['transfer_date'] : $row['transfer_result'];
-			echo '<tr><td uin="'.intval($row['id']).'"><input name="uins" type="checkbox" id="uins" class="uins" value="'.intval($row['id']).'" '.($row['transfer_status']!=1?'checked':null).'>'.intval($row['id']).'</td><td>'.intval($row['uid']).'</td><td>'.e($row['account']).'</td><td>'.e($row['username']).'</td><td class="money">'.e($row['realmoney']).'</td><td id="id'.intval($row['id']).'" uin="'.intval($row['id']).'" class="nocheck recheck" align="center">'.($row['transfer_status']!=1?'<span class="btn btn-xs btn-block btn-primary">立即转账</span>':'<font color="green">已完成</font>').'</td></tr><tr><td><span style="color:silver;">结果</span></td><td colspan="5" id="res'.intval($row['id']).'"><font color="blue">'.e($result_text).'</font></td></tr>';
+			echo '<tr><td uin="'.intval($row['id']).'"><input name="uins" type="checkbox" id="uins" class="uins" value="'.intval($row['id']).'" '.($row['transfer_status']!=1?'checked':null).'>'.intval($row['id']).'</td><td>'.intval($row['uid']).'</td><td>'.e($row['account']).'</td><td>'.e($row['username']).'</td><td class="money">'.e($row['realmoney']).'</td><td id="id'.intval($row['id']).'" uin="'.intval($row['id']).'" class="nocheck recheck" align="center">'.($row['transfer_status']==4?'<font color="grey">已取消并退回余额</font>':($row['transfer_status']==1?'<font color="green">已完成</font>':(!empty($row['transfer_no'])?'<span class="btn btn-xs btn-block btn-warning">查询原付款（禁止重付）</span>':'<span class="btn btn-xs btn-block btn-primary">立即转账</span>'))).'</td></tr><tr><td><span style="color:silver;">结果</span></td><td colspan="5" id="res'.intval($row['id']).'"><font color="blue">'.e($result_text).'</font></td></tr>';
 			}
 			?>
 		</tbody>

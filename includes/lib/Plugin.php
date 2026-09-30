@@ -19,11 +19,11 @@ class Plugin {
 
 	static public function getList(){
 		$dir = PLUGIN_ROOT;
-		$dirArray[] = NULL;
+		$dirArray = [];
 		if (false != ($handle = opendir($dir))) {
 			$i = 0;
 			while (false !== ($file = readdir($handle))) {
-				if ($file != "." && $file != ".." && strpos($file, ".")===false) {
+				if ($file != "." && $file != ".." && preg_match('/^[a-zA-Z0-9_]{1,32}$/', $file) && is_dir($dir.$file)) {
 					$dirArray[$i] = $file;
 					$i++;
 				}
@@ -97,7 +97,7 @@ class Plugin {
 						exit;
 					}
 				}
-				exit('<script>location.href="'.$order['payurl'].'";</script>');
+				exit('<script>location.href='.json_encode($order['payurl'], JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT).';</script>');
 			}
 
 			if($order && $func=='getpayurl'){
@@ -208,7 +208,7 @@ class Plugin {
 
 	static public function refund($refund_no, $trade_no, $money, &$message){
 		global $order,$channel,$DB;
-		if(!preg_match('/^(.[0-9]+)$/',$trade_no))return false;
+		if(!preg_match('/^[0-9]{8,32}$/',$trade_no))return false;
 		$channel = $order['subchannel'] > 0 ? \lib\Channel::getSub($order['subchannel']) : \lib\Channel::get($order['channel'], $DB->findColumn('user', 'channelinfo', ['uid'=>$order['uid']]));
 		if(!$channel){
 			$message = '当前支付通道信息不存在';
@@ -245,7 +245,7 @@ class Plugin {
 
 	static public function close($trade_no, &$message){
 		global $order,$channel,$DB;
-		if(!preg_match('/^(.[0-9]+)$/',$trade_no))return false;
+		if(!preg_match('/^[0-9]{8,32}$/',$trade_no))return false;
 		$channel = $order['subchannel'] > 0 ? \lib\Channel::getSub($order['subchannel']) : \lib\Channel::get($order['channel'], $DB->findColumn('user', 'channelinfo', ['uid'=>$order['uid']]));
 		if(!$channel){
 			$message = '当前支付通道信息不存在';

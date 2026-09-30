@@ -44,7 +44,7 @@ Class AdaTools
 			$pubKey = file_get_contents($this->rsaPublicKeyFilePath);
 			$key = openssl_get_publickey($pubKey);
 		}
-		if (openssl_verify($data , base64_decode($signature) , $key , OPENSSL_ALGO_SHA1)) {
+		if (openssl_verify($data , base64_decode($signature) , $key , OPENSSL_ALGO_SHA1) === 1) {
 			return true;
 		}
 		return false;

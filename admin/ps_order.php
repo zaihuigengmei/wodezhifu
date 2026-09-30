@@ -37,7 +37,7 @@ if($islogin==1){}else exit("<script language='javascript'>window.location.href='
 	<input type="text" id="endtime" name="endtime" class="form-control dates" placeholder="结束日期" autocomplete="off" title="留空则不限时间范围">
   </div>
   <div class="form-group">
-	<select name="dstatus" class="form-control"><option value="-1">全部状态</option><option value="0">待分账</option><option value="1">已提交</option><option value="2">分账成功</option><option value="3">分账失败</option><option value="4">已取消</option></select>
+	<select name="dstatus" class="form-control"><option value="-1">全部状态</option><option value="0">待分账</option><option value="1">已提交</option><option value="2">分账成功</option><option value="3">分账失败</option><option value="4">已取消</option><option value="5">提交待核对</option><option value="6">回退待核对</option><option value="7">取消待核对</option></select>
   </div>
   <button type="submit" class="btn btn-primary">搜索</button>
   <a href="javascript:searchClear()" class="btn btn-default" title="刷新记录列表"><i class="fa fa-refresh"></i></a>
@@ -162,7 +162,8 @@ $(document).ready(function(){
 				field: 'status',
 				title: '分账状态',
 				formatter: function(value, row, index) {
-					if(value == '1'){
+					if(value == '5' || value == '6' || value == '7'){ return '<font color=orange>'+({'5':'提交待核对','6':'回退待核对','7':'取消待核对'}[value])+'</font>'; }
+                    if(value == '1'){
 						return '<font color=orange>已提交</font>';
 					}else if(value == '2'){
 						return '<font color=green>分账成功</font>';
@@ -179,7 +180,9 @@ $(document).ready(function(){
 				field: 'status',
 				title: '操作',
 				formatter: function(value, row, index) {
-					if(value == '1'){
+					if(value == '5'){ return '<a href="javascript:do_query('+row.id+')" class="btn btn-info btn-xs">查询原分账</a> 禁止重新提交'; }
+                    if(value == '6' || value == '7'){ return '需核对原回退/取消交易，禁止重复操作'; }
+                    if(value == '1'){
 						return '<a href="javascript:do_query('+row.id+')" class="btn btn-info btn-xs">查询结果</a>';
 					}else if(value == '2'){
 						return '<a href="javascript:do_return('+row.id+')" class="btn btn-danger btn-xs">分账回退</a>';

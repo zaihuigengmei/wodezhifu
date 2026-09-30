@@ -53,6 +53,7 @@ case 'settleList':
 		$value = daddslashes($_POST['value']);
 		$sql.=" AND (`account` like '%{$value}%' OR `username` like '%{$value}%')";
 	}
+	if(isset($_POST['transfer_status']) && in_array((string)$_POST['transfer_status'], ['3','4'], true)) $sql.=' AND transfer_status='.(int)$_POST['transfer_status'];
 	$offset = intval($_POST['offset']);
 	$limit = intval($_POST['limit']);
 	$total = $DB->getColumn("SELECT count(*) from pre_settle WHERE{$sql}");
@@ -76,72 +77,53 @@ case 'create_batch':
 	if($_SERVER['REQUEST_METHOD'] !== 'POST') exit('{"code":405,"msg":"Method Not Allowed"}');
 	// Do not accept a CSRF token from the query string for this state-changing action.
 	if(!isset($_POST['csrf_token']) || !is_string($_POST['csrf_token']) || !hash_equals(csrf_token('admin'), $_POST['csrf_token'])) exit('{"code":403,"msg":"CSRF TOKEN ERROR"}');
-	$count=$DB->getColumn("SELECT count(*) from pre_settle where status=0");
-	if($count==0)exit('{"code":-1,"msg":"当前不存在待结算的记录"}');
-	$batch=date("Ymd").rand(111,999);
-	$allmoney = 0;
-	$rs=$DB->query("SELECT * from pre_settle where status=0");
-	while($row = $rs->fetch())
-	{
-		$DB->exec("UPDATE pre_settle SET batch='$batch',status=2 WHERE id='{$row['id']}'");
-		$allmoney+=$row['realmoney'];
-	}
-	$DB->insert('batch', ['batch'=>$batch, 'allmoney'=>$allmoney, 'count'=>$count, 'time'=>'NOW()', 'status'=>0]);
-
-	exit(json_encode(['code'=>0, 'msg'=>'succ', 'batch'=>$batch, 'count'=>$count, 'allmoney'=>$allmoney]));
+    try {
+        $r=\lib\Finance::transaction(function() use($DB){
+            $rows=\lib\Finance::checked($DB->query('SELECT * FROM pre_settle WHERE status=0 AND transfer_status=0 ORDER BY id FOR UPDATE'))->fetchAll(\PDO::FETCH_ASSOC);
+            if(!$rows) throw new \RuntimeException('没有待结算记录');
+            $batch=date('Ymd').bin2hex(random_bytes(5));$sum=0;
+            foreach($rows as $row){
+                $n=\lib\Finance::checked($DB->update('settle',['batch'=>$batch,'status'=>2],['id'=>$row['id'],'status'=>0]));
+                if($n!==1) throw new \RuntimeException('结算认领失败');
+                $sum+=\lib\Finance::cents($row['realmoney']);
+            }
+            \lib\Finance::checked($DB->insert('batch',['batch'=>$batch,'allmoney'=>\lib\Finance::amount($sum),'count'=>count($rows),'time'=>'NOW()','status'=>0]));
+            return ['code'=>0,'msg'=>'succ','batch'=>$batch,'count'=>count($rows),'allmoney'=>\lib\Finance::amount($sum)];
+        });exit(json_encode($r));
+    }catch(\Throwable $e){exit(json_encode(['code'=>-1,'msg'=>'批次创建未完成']));}
 break;
 case 'complete_batch':
-	$batch=admin_safe_token($_POST['batch'], '批次号');
-	$DB->exec("UPDATE pre_settle SET status=1 WHERE batch='$batch'");
-	exit('{"code":0,"msg":"succ"}');
+    if($_SERVER['REQUEST_METHOD'] !== 'POST') exit('{"code":405,"msg":"Method Not Allowed"}');
+	$batch=admin_safe_token($_POST['batch'] ?? '', '批次号');
+    try {\lib\Finance::transaction(function() use($DB,$batch){
+        // Same row locks as settlePay: completion wins and prevents a new intent,
+        // or the durable payment intent wins and completion must refuse it.
+        $rows=\lib\Finance::checked($DB->query('SELECT * FROM pre_settle WHERE batch=:b ORDER BY id FOR UPDATE',[':b'=>$batch]))->fetchAll(\PDO::FETCH_ASSOC);
+        $header=\lib\Finance::row('SELECT * FROM pre_batch WHERE batch=:b FOR UPDATE',[':b'=>$batch]);
+        if(!$header || !$rows || (int)$header['count']!==count($rows))throw new \RuntimeException('批次不存在或成员不一致');
+        foreach($rows as $row){
+            $confirmed=(int)$row['status']===1 && (int)$row['transfer_status']===1;
+            $manual=(int)$row['transfer_status']===0 && empty($row['transfer_no']) && in_array((int)$row['status'],[1,2],true);
+            if(!$confirmed && !$manual)throw new \RuntimeException('批次有在途付款或待核对记录');
+        }
+        \lib\Finance::checked($DB->exec('UPDATE pre_settle SET status=1,endtime=NOW() WHERE batch=:b AND status=2 AND transfer_status=0 AND (transfer_no IS NULL OR transfer_no=\'\')',[':b'=>$batch]));
+        \lib\Finance::checked($DB->update('batch',['status'=>1],['batch'=>$batch]));
+    });exit(json_encode(['code'=>0,'msg'=>'succ']));}catch(\Throwable $e){exit(json_encode(['code'=>-2,'msg'=>'批次未完成：有在途付款、待核对记录或成员状态冲突，请查询原交易']));}
 break;
 case 'setSettleStatus':
 	if($_SERVER['REQUEST_METHOD'] !== 'POST') exit('{"code":405,"msg":"Method Not Allowed"}');
 	$id=intval($_POST['id']);
 	$status=intval($_POST['status']);
-	if($status==4){
-		$row = $DB->find('settle', 'uid,money', ['id'=>$id]);
-		if(!$row) exit('{"code":200}');
-		if($DB->exec("DELETE FROM pre_settle WHERE id='$id'")){
-			changeUserMoney($row['uid'], $row['money'], true, '结算失败退回');
-			exit('{"code":200}');
-		}
-		else{
-			exit(json_encode(['code'=>400, 'msg'=>'删除记录失败！['.$DB->error().']']));
-		}
-	}else{
-		if($status==1){
-			$sql = "update pre_settle set status='$status',endtime='$date',result=NULL where id='$id'";
-
-			$row = $DB->find('settle', 'uid,money,realmoney,account', ['id'=>$id]);
-			\lib\MsgNotice::send('settle', $row['uid'], ['money'=>$row['money'], 'realmoney'=>$row['realmoney'], 'time'=>date('Y-m-d H:i:s'), 'account'=>$row['account']]);
-		}else{
-			$sql = "update pre_settle set status='$status',endtime=NULL where id='$id'";
-		}
-		if($DB->exec($sql)!==false)
-			exit('{"code":200}');
-		else
-			exit(json_encode(['code'=>400, 'msg'=>'修改记录失败！['.$DB->error().']']));
-	}
+    try {\lib\Transfer::settleStatus($id,$status);exit(json_encode(['code'=>200]));}
+    catch(\Throwable $e){exit(json_encode(['code'=>400,'msg'=>'状态冲突或余额确认失败，请核对']));}
 break;
 case 'opslist':
-	$status=intval($_POST['status']);
-	if(!in_array($status, [1,2,3,4], true)) exit('{"code":-1,"msg":"状态不合法"}');
-	$checkbox=is_array($_POST['checkbox'])?$_POST['checkbox']:[];
-	$i=0;
-	foreach($checkbox as $id){
-		$id=intval($id);
-		if($status==4){
-			$sql = "DELETE FROM pre_settle WHERE id='$id'";
-		}elseif($status==1){
-			$sql = "update pre_settle set status='$status',endtime='$date',result=NULL where id='$id'";
-		}else{
-			$sql = "update pre_settle set status='$status',endtime=NULL where id='$id'";
-		}
-		$DB->exec($sql);
-		$i++;
-	}
-	exit(json_encode(['code'=>0, 'msg'=>'成功改变'.$i.'条记录状态']));
+    $status=intval($_POST['status']);$i=0;
+    foreach((array)($_POST['checkbox']??[]) as $id){
+        try {\lib\Transfer::settleStatus((int)$id,$status);$i++;}
+        catch(\Throwable $e){exit(json_encode(['code'=>-2,'msg'=>'批量处理未完成，请核对','completed'=>$i]));}
+    }
+    exit(json_encode(['code'=>0,'msg'=>'成功改变'.$i.'条记录状态']));
 break;
 case 'settle_result':
 	$id=intval($_POST['id']);
@@ -181,7 +163,7 @@ case 'settle_save':
 	$pay_account=trim($_POST['pay_account']);
 	$pay_name=trim($_POST['pay_name']);
 	$data = ['type'=>$pay_type, 'account'=>$pay_account, 'username'=>$pay_name];
-	if($DB->update('settle', $data, ['id'=>$id])!==false)
+	if($DB->update('settle', $data, ['id'=>$id,'transfer_status'=>0,'status'=>0])===1)
 		exit('{"code":0,"msg":"修改记录成功！"}');
 	else
 		exit(json_encode(['code'=>-1, 'msg'=>'修改记录失败！'.$DB->error().'']));
@@ -218,7 +200,7 @@ case 'transfer':
 	if(!$row)exit('{"code":-1,"msg":"记录不存在"}');
 	if($row['type']!=$type)exit('{"code":-1,"msg":"转账类型不正确"}');
 
-	if($row['transfer_status']==1)exit(json_encode(['code'=>0, 'ret'=>2, 'result'=>'转账订单号:'.$row['transfer_result'].' 支付时间:'.$row['transfer_date'].'']));
+	if($row['transfer_status']==1 && $row['status']==1)exit(json_encode(['code'=>0, 'ret'=>2, 'result'=>'转账订单号:'.$row['transfer_result'].' 支付时间:'.$row['transfer_date'].'']));
 
 	if($type == 1){
 		$app = 'alipay';
@@ -232,35 +214,9 @@ case 'transfer':
 	$channel = \lib\Channel::get($channelid);
 	if(!$channel)exit('{"code":-1,"msg":"当前支付通道信息不存在"}');
 
-	$out_biz_no = date("YmdHis").str_pad($id, 5, '0', STR_PAD_LEFT);
-	$result = \lib\Transfer::submit($app, $channel, $out_biz_no, $row['account'], $row['username'], $row['realmoney']);
-
-	if($result['code']==0){
-		$data['code']=0;
-		$data['ret']=1;
-		$data['result']='转账订单号:'.$result['orderid'].' 支付时间:'.$result['paydate'];
-		$update = ['status'=>1, 'endtime'=>'NOW()', 'transfer_no'=>$out_biz_no, 'transfer_channel'=>$channelid, 'transfer_status'=>1, 'transfer_result'=>$result["orderid"], 'transfer_date'=>$result["paydate"]];
-		if(isset($result['wxpackage'])) $update['transfer_ext'] = $result['wxpackage'];
-		$DB->update('settle', $update, ['id'=>$id]);
-
-		if(isset($result['wxpackage'])) {
-			$jumpurl = $siteurl.'paypage/wxtrans.php?type=settle&id='.$id;
-			\lib\MsgNotice::send('settle', $row['uid'], ['money'=>$row['money'], 'realmoney'=>$row['realmoney'], 'time'=>date('Y-m-d H:i:s'), 'account'=>$row['account'], 'jumpurl'=>$jumpurl]);
-		}else{
-			\lib\MsgNotice::send('settle', $row['uid'], ['money'=>$row['money'], 'realmoney'=>$row['realmoney'], 'time'=>date('Y-m-d H:i:s'), 'account'=>$row['account']]);
-		}
-	} else {
-		if(in_array($result['errcode'], \lib\Transfer::$payee_err_code)){
-			$data['code']=0;
-			$data['ret']=0;
-			$data['result']='转账失败 '.$result['msg'];
-			$DB->update('settle', ['status'=>3, 'result'=>$result["msg"], 'transfer_status'=>2, 'transfer_result'=>$data['result']], ['id'=>$id]);
-		}else{
-			$data['code']=-1;
-			$data['msg']=$result['msg'];
-		}
-	}
-	exit(json_encode($data));
+    $result=\lib\Transfer::settlePay($id,$app,$channel);
+    if($result['code']==0) exit(json_encode(['code'=>0,'ret'=>$result['status']==2?0:1,'result'=>$result['status']==2?'付款失败':'已提交原付款，请查询结果']));
+    exit(json_encode($result));
 break;
 
 default:

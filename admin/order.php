@@ -10,7 +10,7 @@ if($islogin==1){}else exit("<script language='javascript'>window.location.href='
 $type_select = '<option value="">支付方式</option>';
 $rs = $DB->getAll("SELECT * FROM pre_type ORDER BY id ASC");
 foreach($rs as $row){
-	$type_select .= '<option value="'.$row['id'].'">'.$row['showname'].'</option>';
+	$type_select .= '<option value="'.(int)$row['id'].'">'.htmlspecialchars($row['showname'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8').'</option>';
 }
 unset($rs);
 ?>
@@ -54,7 +54,7 @@ unset($rs);
 	<input type="text" id="endtime" name="endtime" class="form-control dates" placeholder="结束日期" autocomplete="off" title="留空则不限时间范围">
   </div>
   <div class="form-group">
-	<select name="dstatus" class="form-control"><option value="">全部状态</option><optgroup label="订单状态"><option value="0">未支付</option><option value="1">已支付</option><option value="2">已退款</option><option value="3">已冻结</option><option value="4">预授权</option></optgroup><optgroup label="结算状态"><option value="settle_1">待结算</option><option value="settle_2">结算成功</option><option value="settle_3">结算失败</option></optgroup></select>
+	<select name="dstatus" class="form-control"><option value="">全部状态</option><optgroup label="订单状态"><option value="0">未支付</option><option value="1">已支付</option><option value="2">已退款</option><option value="3">已冻结</option><option value="4">预授权</option></optgroup><optgroup label="结算状态"><option value="settle_1">待结算</option><option value="settle_2">结算成功</option><option value="settle_3">结算失败</option><option value="settle_4">结算待核对</option></optgroup></select>
   </div>
   <button type="submit" class="btn btn-primary">&nbsp;搜索&nbsp;</button>
   <a href="javascript:searchClear()" class="btn btn-default" title="刷新订单列表"><i class="fa fa-refresh"></i></a>
@@ -110,7 +110,7 @@ unset($rs);
 	<li>订单成功率：<span style="font-weight: 600;">{successRate}%</span></li>
 </ul>
 </template>
-<a style="display: none;" href="" id="vurl" rel="noreferrer" target="_blank"></a>
+<a style="display: none;" href="" id="vurl" rel="noopener noreferrer" target="_blank"></a>
 <script src="<?php echo $cdnpublic?>layer/3.1.1/layer.js"></script>
 <script src="<?php echo $cdnpublic?>bootstrap-datepicker/1.10.0/js/bootstrap-datepicker.min.js"></script>
 <script src="<?php echo $cdnpublic?>bootstrap-datepicker/1.10.0/locales/bootstrap-datepicker.zh-CN.min.js"></script>
@@ -118,6 +118,19 @@ unset($rs);
 <script src="../assets/js/bootstrap-table-page-jump-to.min.js"></script>
 <script src="../assets/js/custom.js"></script>
 <script>
+function escHtml(value){
+    return String(value == null ? '' : value).replace(/[&<>"']/g, function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});
+}
+function uiJs(value){
+    return escHtml(String(value == null ? '' : value).replace(/\\/g,'\\\\').replace(/%/g,'\\u0025').replace(/'/g,'\\u0027').replace(/"/g,'\\u0022').replace(/</g,'\\u003c').replace(/>/g,'\\u003e').replace(/&/g,'\\u0026').replace(/\r/g,'\\r').replace(/\n/g,'\\n').replace(/\u2028/g,'\\u2028').replace(/\u2029/g,'\\u2029'));
+}
+function safeUiUrl(value){
+    try { if(typeof value !== 'string' || /[\u0000-\u0020\u007f\\]/.test(value)) return null;
+        var u=new URL(value,window.location.href);
+        return /^https?:$/.test(u.protocol) && !u.username && !u.password ? u.href : null;
+    } catch(e){return null;}
+}
+function openlink(value){ var url=safeUiUrl(value); if(url) window.open(url,'_blank','noopener,noreferrer'); }
 $(document).ready(function(){
 	updateToolbar();
 	const defaultPageSize = 30;
@@ -139,35 +152,35 @@ $(document).ready(function(){
 				field: 'trade_no',
 				title: '系统订单号<br/>商户订单号',
 				formatter: function(value, row, index) {
-					return '<a href="javascript:showOrder(\''+value+'\')" title="点击查看详情">'+value+'</a></b><br/>'+row.out_trade_no;
+					return '<a href="javascript:showOrder(\''+uiJs(value)+'\')" title="点击查看详情">'+escHtml(value)+'</a></b><br/>'+escHtml(row.out_trade_no);
 				}
 			},
 			{
 				field: 'uid',
 				title: '商户号<br/>网站域名',
 				formatter: function(value, row, index) {
-					return '<a href="./ulist.php?my=search&column=uid&value='+value+'" target="_blank">'+value+'</a><br/><a onclick="openlink(\'http://'+row.domain+'\')">'+row.domain+'</a>';
+					return '<a href="./ulist.php?my=search&column=uid&value='+escHtml(value)+'" target="_blank">'+escHtml(value)+'</a><br/><a onclick="openlink(\'http://'+uiJs(row.domain)+'\')">'+escHtml(row.domain)+'</a>';
 				}
 			},
 			{
 				field: 'name',
 				title: '商品名称<br/>订单金额',
 				formatter: function(value, row, index) {
-					return value+'<br/>¥<b>'+row.money+'</b>';
+					return escHtml(value)+'<br/>¥<b>'+escHtml(row.money)+'</b>';
 				}
 			},
 			{
 				field: 'realmoney',
 				title: '实际支付<br/>商户分成',
 				formatter: function(value, row, index) {
-					return value!=null?'¥<b>'+value+'</b><br/>¥<b>'+row.getmoney+'</b>':'';
+					return value!=null?'¥<b>'+escHtml(value)+'</b><br/>¥<b>'+escHtml(row.getmoney)+'</b>':'';
 				}
 			},
 			{
 				field: 'type',
 				title: '支付方式(通道ID)<br/>支付插件',
 				formatter: function(value, row, index) {
-					return row.typename ? '<img src="/assets/icon/'+row.typename+'.ico" class="type-logo" onerror="this.style.display=\'none\'">'+row.typeshowname+'(<a href="./pay_channel.php?kw='+row.channel+'" target="_blank" title="'+row.channelname+'">'+row.channel+'</a>)<br/>'+row.plugin : '';
+					return row.typename ? '<img src="/assets/icon/'+encodeURIComponent(row.typename)+'.ico" class="type-logo" onerror="this.style.display=\'none\'">'+escHtml(row.typeshowname)+'(<a href="./pay_channel.php?kw='+escHtml(row.channel)+'" target="_blank" title="'+escHtml(row.channelname)+'">'+escHtml(row.channel)+'</a>)<br/>'+escHtml(row.plugin) : '';
 				}
 			},
 			{
@@ -178,19 +191,19 @@ $(document).ready(function(){
 				},
 				title: '支付IP<br/>支付账号',
 				formatter: function(value, row, index) {
-					return '<a href="https://m.ip138.com/iplookup.asp?ip='+value+'" target="_blank" rel="noreferrer">'+value+'</a>&nbsp;<a href="javascript:addBlackList(1,\''+row.ip+'\')" class="btn btn-xs btn-default"><i class="fa fa-stop-circle"></i></a><br/>'+(row.buyer?row.buyer+'&nbsp;<a href="javascript:addBlackList(0,\''+row.buyer+'\')" class="btn btn-xs btn-default"><i class="fa fa-stop-circle"></i></a>':'&nbsp;');
+					return '<a href="https://m.ip138.com/iplookup.asp?ip='+escHtml(value)+'" target="_blank" rel="noopener noreferrer">'+escHtml(value)+'</a>&nbsp;<a href="javascript:addBlackList(1,\''+uiJs(row.ip)+'\')" class="btn btn-xs btn-default"><i class="fa fa-stop-circle"></i></a><br/>'+(row.buyer?escHtml(row.buyer)+'&nbsp;<a href="javascript:addBlackList(0,\''+uiJs(row.buyer)+'\')" class="btn btn-xs btn-default"><i class="fa fa-stop-circle"></i></a>':'&nbsp;');
 				}
 			},
 			{
 				field: 'param',
-				title: '扩展参数',
+				title: '扩展参数', formatter: function(value){return escHtml(value);},
 				visible: false,
 			},
 			{
 				field: 'addtime',
 				title: '创建时间<br/>完成时间',
 				formatter: function(value, row, index) {
-					return value+'<br/>'+(row.endtime?row.endtime:'&nbsp;');
+					return escHtml(value)+'<br/>'+(row.endtime?escHtml(row.endtime):'&nbsp;');
 				}
 			},
 			{
@@ -203,7 +216,7 @@ $(document).ready(function(){
 					}else if(value == '2'){
 						text = '<font color=red>已退款</font>';
 						if(row.refundmoney > 0 && row.refundmoney < row.realmoney){
-							text += '<br/><font color=red>('+row.refundmoney+'元)</font>';
+							text += '<br/><font color=red>('+escHtml(row.refundmoney)+'元)</font>';
 						}
 					}else if(value == '3'){
 						text = '<font color=red>已冻结</font>';
@@ -217,7 +230,9 @@ $(document).ready(function(){
 							text += '<br/><font color=#8c8f93>待结算</font>';
 						}else if(row.settle == '2'){
 							text += '<br/><font color=#37db3c>结算成功</font>';
-						}else if(row.settle == '3'){
+						}else if(row.settle == '4'){
+                            text += '<br/><font color=orange>结算待核对（禁止重试）</font>';
+                        }else if(row.settle == '3'){
 							text += '<br/><font color=#ed6565>结算失败</font>';
 						}
 					}else if(row.plugin=='alipayrp'){
@@ -225,7 +240,9 @@ $(document).ready(function(){
 							text += '<br/><font color=#8c8f93>待转账</font>';
 						}else if(row.settle == '2'){
 							text += '<br/><font color=#37db3c>转账成功</font>';
-						}else if(row.settle == '3'){
+						}else if(row.settle == '4'){
+                            text += '<br/><font color=orange>结算待核对（禁止重试）</font>';
+                        }else if(row.settle == '3'){
 							text += '<br/><font color=#ed6565>转账失败</font>';
 						}
 					}
@@ -237,24 +254,24 @@ $(document).ready(function(){
 				title: '操作',
 				formatter: function(value, row, index) {
 					let html = '<div class="btn-group dropdown-group" role="group"><button type="button" class="btn btn-default dropdown-toggle" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">操作订单 <span class="caret"></span></button><ul class="dropdown-menu">';
-					if((row.plugin=='alipayd' || row.plugin=='wxpaynp') && (row.settle=='1'||row.settle=='3')){
-						html += '<li><a href="javascript:alipaydSettle(\''+row.trade_no+'\')">确认结算</a></li>';
+					if((row.plugin=='alipayd' || row.plugin=='wxpaynp') && row.settle=='1'){
+						html += '<li><a href="javascript:alipaydSettle(\''+uiJs(row.trade_no)+'\')">确认结算</a></li>';
 					}
 					else if(row.plugin=='alipayrp' && (row.settle=='1'||row.settle=='3')){
-						html += '<li><a href="javascript:alipayRedPacketTansfer(\''+row.trade_no+'\')">红包转账重试</a></li>';
+						html += '<li><a href="javascript:alipayRedPacketTansfer(\''+uiJs(row.trade_no)+'\')">红包转账重试</a></li>';
 					}
 					if(value == '1'){
-						html+= '<li><a href="javascript:setStatus(\''+row.trade_no+'\', 0)">改未完成</a></li><li><a href="javascript:apirefund(\''+row.trade_no+'\')">API退款</a></li><li><a href="javascript:refund(\''+row.trade_no+'\')">手动退款</a></li><li><a href="javascript:freeze(\''+row.trade_no+'\')">冻结订单</a></li><li role="separator" class="divider"></li><li><a href="javascript:callnotify(\''+row.trade_no+'\')">重新通知</a></li><li><a href="javascript:setStatus(\''+row.trade_no+'\', 5)">删除订单</a></li>';
+						html+= '<li><a href="javascript:setStatus(\''+uiJs(row.trade_no)+'\', 0)">改未完成</a></li><li><a href="javascript:apirefund(\''+uiJs(row.trade_no)+'\')">API退款</a></li><li><a href="javascript:refund(\''+uiJs(row.trade_no)+'\')">手动退款</a></li><li><a href="javascript:freeze(\''+uiJs(row.trade_no)+'\')">冻结订单</a></li><li role="separator" class="divider"></li><li><a href="javascript:callnotify(\''+uiJs(row.trade_no)+'\')">重新通知</a></li><li><a href="javascript:setStatus(\''+uiJs(row.trade_no)+'\', 5)">删除订单</a></li>';
 					}else if(value == '2'){
-						html+= '<li><a href="javascript:setStatus(\''+row.trade_no+'\', 0)">改未完成</a></li><li><a href="javascript:apirefund(\''+row.trade_no+'\')">API退款</a></li><li><a href="javascript:setStatus(\''+row.trade_no+'\', 1)">改已完成</a></li><li role="separator" class="divider"></li><li><a href="javascript:callnotify(\''+row.trade_no+'\')">重新通知</a></li><li><a href="javascript:setStatus(\''+row.trade_no+'\', 5)">删除订单</a></li>';
+						html+= '<li><a href="javascript:setStatus(\''+uiJs(row.trade_no)+'\', 0)">改未完成</a></li><li><a href="javascript:apirefund(\''+uiJs(row.trade_no)+'\')">API退款</a></li><li><a href="javascript:setStatus(\''+uiJs(row.trade_no)+'\', 1)">改已完成</a></li><li role="separator" class="divider"></li><li><a href="javascript:callnotify(\''+uiJs(row.trade_no)+'\')">重新通知</a></li><li><a href="javascript:setStatus(\''+uiJs(row.trade_no)+'\', 5)">删除订单</a></li>';
 					}else if(value == '3'){
-						html+= '<li><a href="javascript:unfreeze(\''+row.trade_no+'\')">解冻订单</a></li><li><a href="javascript:apirefund(\''+row.trade_no+'\')">API退款</a></li><li role="separator" class="divider"></li><li><a href="javascript:callnotify(\''+row.trade_no+'\')">重新通知</a></li><li><a href="javascript:setStatus(\''+row.trade_no+'\', 5)">删除订单</a></li>';
+						html+= '<li><a href="javascript:unfreeze(\''+uiJs(row.trade_no)+'\')">解冻订单</a></li><li><a href="javascript:apirefund(\''+uiJs(row.trade_no)+'\')">API退款</a></li><li role="separator" class="divider"></li><li><a href="javascript:callnotify(\''+uiJs(row.trade_no)+'\')">重新通知</a></li><li><a href="javascript:setStatus(\''+uiJs(row.trade_no)+'\', 5)">删除订单</a></li>';
 					}else{
 						if(value == '4'){
-							html += '<li><a href="javascript:alipayPreAuthPay(\''+row.trade_no+'\')">授权资金支付</a></li>';
-							html += '<li><a href="javascript:alipayUnfreeze(\''+row.trade_no+'\')">授权资金解冻</a></li><li role="separator" class="divider"></li>';
+							html += '<li><a href="javascript:alipayPreAuthPay(\''+uiJs(row.trade_no)+'\')">授权资金支付</a></li>';
+							html += '<li><a href="javascript:alipayUnfreeze(\''+uiJs(row.trade_no)+'\')">授权资金解冻</a></li><li role="separator" class="divider"></li>';
 						}
-						html+= '<li><a href="javascript:setStatus(\''+row.trade_no+'\', 1)">改已完成</a></li><li role="separator" class="divider"></li><li><a href="javascript:fillorder(\''+row.trade_no+'\')">手动补单</a></li><li><a href="javascript:setStatus(\''+row.trade_no+'\', 5)">删除订单</a></li>';
+						html+= '<li><a href="javascript:setStatus(\''+uiJs(row.trade_no)+'\', 1)">改已完成</a></li><li role="separator" class="divider"></li><li><a href="javascript:fillorder(\''+uiJs(row.trade_no)+'\')">手动补单</a></li><li><a href="javascript:setStatus(\''+uiJs(row.trade_no)+'\', 5)">删除订单</a></li>';
 					}
 					html += '</ul></div>';
 					return html;
@@ -282,9 +299,7 @@ $(document).ready(function(){
 	})
 })
 
-function openlink(full_link){ 
-	window.open('javascript:window.name;', '<script>location.replace("'+full_link+'")<\/script>');
-}
+
 
 function statistics(){
     var ii = layer.load(2, {shade:[0.1,'#fff']});
@@ -298,12 +313,12 @@ function statistics(){
             if(data.code == 0){
                 var element = $('#modal-statistics');
                 var htmlContent = $("#statistics").html().replace(/\{(\w+)\}/g, function (match, key) {
-                    return data.data[key] || '';
+                    return escHtml(data.data[key] == null ? '' : data.data[key]);
                 });
                 element.find('.modal-body').html(htmlContent);
                 element.modal('show');
             }else{
-                layer.alert(data.msg);
+                layer.alert(escHtml(data.msg));
             }
         },
         error:function(data){
@@ -342,9 +357,9 @@ function operation(status){
 			layer.close(ii);
 			if(data.code == 0){
 				searchSubmit();
-				layer.alert(data.msg);
+				layer.alert(escHtml(data.msg));
 			}else{
-				layer.alert(data.msg);
+				layer.alert(escHtml(data.msg));
 			}
 		},
 		error:function(data){
@@ -367,44 +382,44 @@ function showOrder(trade_no) {
 				var data = data.data;
 				var item = '<table class="table table-condensed table-hover" id="orderItem">';
 				item += '<tr><td colspan="6" style="text-align:center" class="orderTitle"><b>订单信息</b></td></tr>';
-				item += '<tr class="orderTitle"><td class="info" class="orderTitle">系统订单号</td><td colspan="5" class="orderContent">'+data.trade_no+'</td></tr>';
-				item += '<tr><td class="info" class="orderTitle">商户订单号</td><td colspan="5" class="orderContent">'+data.out_trade_no+'</td></tr>';
-				item += '<tr><td class="info" class="orderTitle">接口订单号</td><td colspan="5" class="orderContent">'+data.api_trade_no+'</td></tr>';
+				item += '<tr class="orderTitle"><td class="info" class="orderTitle">系统订单号</td><td colspan="5" class="orderContent">'+escHtml(data.trade_no)+'</td></tr>';
+				item += '<tr><td class="info" class="orderTitle">商户订单号</td><td colspan="5" class="orderContent">'+escHtml(data.out_trade_no)+'</td></tr>';
+				item += '<tr><td class="info" class="orderTitle">接口订单号</td><td colspan="5" class="orderContent">'+escHtml(data.api_trade_no)+'</td></tr>';
 				if(data.bill_mch_trade_no){
-					item += '<tr><td class="info" class="orderTitle">渠道交易单号</td><td colspan="5" class="orderContent">'+data.bill_mch_trade_no+'</td></tr>';
+					item += '<tr><td class="info" class="orderTitle">渠道交易单号</td><td colspan="5" class="orderContent">'+escHtml(data.bill_mch_trade_no)+'</td></tr>';
 				}
 				if(data.bill_trade_no){
-					item += '<tr><td class="info" class="orderTitle">用户交易单号</td><td colspan="5" class="orderContent">'+data.bill_trade_no+'</td></tr>';
+					item += '<tr><td class="info" class="orderTitle">用户交易单号</td><td colspan="5" class="orderContent">'+escHtml(data.bill_trade_no)+'</td></tr>';
 				}
-				item += '<tr><td class="info">商户ID</td class="orderTitle"><td colspan="5" class="orderContent"><a href="./ulist.php?my=search&column=uid&value='+data.uid+'" target="_blank">'+data.uid+'</a></td>';
-				item += '<tr><td class="info" class="orderTitle">支付方式</td><td colspan="5" class="orderContent">'+data.typename+'</td></tr>';
-				item += '<tr><td class="info" class="orderTitle">支付通道</td><td colspan="5" class="orderContent"><a href="./pay_channel.php?id='+data.channel+'" target="_blank">'+data.channelname+'</a></td></tr>';
+				item += '<tr><td class="info">商户ID</td class="orderTitle"><td colspan="5" class="orderContent"><a href="./ulist.php?my=search&column=uid&value='+escHtml(data.uid)+'" target="_blank">'+escHtml(data.uid)+'</a></td>';
+				item += '<tr><td class="info" class="orderTitle">支付方式</td><td colspan="5" class="orderContent">'+escHtml(data.typename)+'</td></tr>';
+				item += '<tr><td class="info" class="orderTitle">支付通道</td><td colspan="5" class="orderContent"><a href="./pay_channel.php?id='+escHtml(data.channel)+'" target="_blank">'+escHtml(data.channelname)+'</a></td></tr>';
 				if(data.subchannel > 0){
-					item += '<tr><td class="info" class="orderTitle">自定义子通道</td><td colspan="5" class="orderContent">'+data.subchannelname+'</td></tr>';
+					item += '<tr><td class="info" class="orderTitle">自定义子通道</td><td colspan="5" class="orderContent">'+escHtml(data.subchannelname)+'</td></tr>';
 				}
-				item += '<tr><td class="info" class="orderTitle">商品名称</td><td colspan="5" class="orderContent">'+data.name+'</td></tr>';
-				item += '<tr><td class="info" class="orderTitle">订单金额</td><td colspan="5" class="orderContent">'+data.money+'</td></tr>';
-				item += '<tr><td class="info" class="orderTitle">实际支付金额</td><td colspan="5" class="orderContent">'+data.realmoney+'</td></tr>';
-				item += '<tr><td class="info" class="orderTitle">商户分成金额</td><td colspan="5" class="orderContent">'+data.getmoney+'</td></tr>';
-				item += '<tr><td class="info" class="orderTitle">手续费利润</td><td colspan="5" class="orderContent">'+data.profitmoney+'</td></tr>';
-				item += '<tr><td class="info" class="orderTitle">创建时间</td><td colspan="5" class="orderContent">'+data.addtime+'</td></tr>';
-				item += '<tr><td class="info" class="orderTitle">完成时间</td><td colspan="5" class="orderContent">'+data.endtime+'</td></tr>';
+				item += '<tr><td class="info" class="orderTitle">商品名称</td><td colspan="5" class="orderContent">'+escHtml(data.name)+'</td></tr>';
+				item += '<tr><td class="info" class="orderTitle">订单金额</td><td colspan="5" class="orderContent">'+escHtml(data.money)+'</td></tr>';
+				item += '<tr><td class="info" class="orderTitle">实际支付金额</td><td colspan="5" class="orderContent">'+escHtml(data.realmoney)+'</td></tr>';
+				item += '<tr><td class="info" class="orderTitle">商户分成金额</td><td colspan="5" class="orderContent">'+escHtml(data.getmoney)+'</td></tr>';
+				item += '<tr><td class="info" class="orderTitle">手续费利润</td><td colspan="5" class="orderContent">'+escHtml(data.profitmoney)+'</td></tr>';
+				item += '<tr><td class="info" class="orderTitle">创建时间</td><td colspan="5" class="orderContent">'+escHtml(data.addtime)+'</td></tr>';
+				item += '<tr><td class="info" class="orderTitle">完成时间</td><td colspan="5" class="orderContent">'+escHtml(data.endtime)+'</td></tr>';
 				if(data.status==2){
-					item += '<tr><td class="info" class="orderTitle">退款时间</td><td colspan="5" class="orderContent">'+data.refundtime+'</td></tr>';
+					item += '<tr><td class="info" class="orderTitle">退款时间</td><td colspan="5" class="orderContent">'+escHtml(data.refundtime)+'</td></tr>';
 				}
-				item += '<tr><td class="info" class="orderTitle" title="只有在官方通道支付完成后才能显示">支付账号</td><td colspan="5" class="orderContent">'+data.buyer+(data.buyer!=null?'&nbsp;&nbsp;<a href="javascript:addBlackList(0,\''+data.buyer+'\')" class="btn btn-xs btn-default">拉黑</a>':'')+'</td></tr>';
+				item += '<tr><td class="info" class="orderTitle" title="只有在官方通道支付完成后才能显示">支付账号</td><td colspan="5" class="orderContent">'+escHtml(data.buyer)+(data.buyer!=null?'&nbsp;&nbsp;<a href="javascript:addBlackList(0,\''+uiJs(data.buyer)+'\')" class="btn btn-xs btn-default">拉黑</a>':'')+'</td></tr>';
 				if(data.mobile){
-					item += '<tr><td class="info" class="orderTitle">手机号码</td><td colspan="5" class="orderContent">'+data.mobile+'&nbsp;&nbsp;<a href="javascript:addBlackList(0,\''+data.mobile+'\')" class="btn btn-xs btn-default">拉黑</a></td></tr>';
+					item += '<tr><td class="info" class="orderTitle">手机号码</td><td colspan="5" class="orderContent">'+escHtml(data.mobile)+'&nbsp;&nbsp;<a href="javascript:addBlackList(0,\''+uiJs(data.mobile)+'\')" class="btn btn-xs btn-default">拉黑</a></td></tr>';
 				}
-				item += '<tr><td class="info" class="orderTitle">网站域名</td><td colspan="5" class="orderContent"><a href="http://'+data.domain+'" target="_blank" rel="noreferrer">'+data.domain+'</a></td></tr>';
-				item += '<tr><td class="info" class="orderTitle">支付IP</td><td colspan="5" class="orderContent"><a href="https://m.ip138.com/iplookup.asp?ip='+data.ip+'" target="_blank" rel="noreferrer">'+data.ip+'</a>&nbsp;&nbsp;<a href="javascript:addBlackList(1,\''+data.ip+'\')" class="btn btn-xs btn-default">拉黑</a></td></tr>';
-				item += '<tr><td class="info" class="orderTitle">扩展参数</td><td colspan="5" class="orderContent">'+data.param+'</td></tr>';
+				item += '<tr><td class="info" class="orderTitle">网站域名</td><td colspan="5" class="orderContent"><a href="http://'+escHtml(data.domain)+'" target="_blank" rel="noopener noreferrer">'+escHtml(data.domain)+'</a></td></tr>';
+				item += '<tr><td class="info" class="orderTitle">支付IP</td><td colspan="5" class="orderContent"><a href="https://m.ip138.com/iplookup.asp?ip='+escHtml(data.ip)+'" target="_blank" rel="noopener noreferrer">'+escHtml(data.ip)+'</a>&nbsp;&nbsp;<a href="javascript:addBlackList(1,\''+uiJs(data.ip)+'\')" class="btn btn-xs btn-default">拉黑</a></td></tr>';
+				item += '<tr><td class="info" class="orderTitle">扩展参数</td><td colspan="5" class="orderContent">'+escHtml(data.param)+'</td></tr>';
 				item += '<tr><td class="info" class="orderTitle">订单状态</td><td colspan="5" class="orderContent">'+status[data.status]+'</td></tr>';
 				if(data.status>0){
-					item += '<tr><td class="info" class="orderTitle">通知状态</td><td colspan="5" class="orderContent">'+(data.notify==0?'<span class="label label-success">通知成功</span>':'<span class="label label-danger">通知失败</span>（已通知'+data.notify+'次）')+'</td></tr>';
+					item += '<tr><td class="info" class="orderTitle">通知状态</td><td colspan="5" class="orderContent">'+(data.notify==0?'<span class="label label-success">通知成功</span>':'<span class="label label-danger">通知失败</span>（已通知'+escHtml(data.notify)+'次）')+'</td></tr>';
 				}
 				item += '<tr><td colspan="6" style="text-align:center" class="orderTitle"><b>订单操作</b></td></tr>';
-				item += '<tr><td colspan="6"><a href="javascript:callnotify(\''+data.trade_no+'\')" class="btn btn-xs btn-default">重新通知(异步)</a>&nbsp;<a href="javascript:callreturn(\''+data.trade_no+'\')" class="btn btn-xs btn-default">重新通知(同步)</a>'+(data.combine==1?'&nbsp;<a href="javascript:showSubOrders(\''+data.trade_no+'\')" class="btn btn-xs btn-default">查看子订单列表</a>':'')+'</td></tr>';
+				item += '<tr><td colspan="6"><a href="javascript:callnotify(\''+uiJs(data.trade_no)+'\')" class="btn btn-xs btn-default">重新通知(异步)</a>&nbsp;<a href="javascript:callreturn(\''+uiJs(data.trade_no)+'\')" class="btn btn-xs btn-default">重新通知(同步)</a>'+(data.combine==1?'&nbsp;<a href="javascript:showSubOrders(\''+uiJs(data.trade_no)+'\')" class="btn btn-xs btn-default">查看子订单列表</a>':'')+'</td></tr>';
 				item += '</table>';
 				var area = [$(window).width() > 480 ? '480px' : '100%', ';max-height:100%'];
 				layer.open({
@@ -415,7 +430,7 @@ function showOrder(trade_no) {
 				  content: item
 				});
 			}else{
-				layer.alert(data.msg);
+				layer.alert(escHtml(data.msg));
 			}
 		},
 		error:function(data){
@@ -434,11 +449,13 @@ function callnotify(trade_no){
 		success : function(data) {
 			layer.close(ii);
 			if(data.code == 0){
-				$("#vurl").attr("href",data.url);
+				var notifyUrl = safeUiUrl(data.url);
+                if(!notifyUrl){ layer.alert('通知地址无效'); return; }
+                $("#vurl").attr("href",notifyUrl);
 				document.getElementById("vurl").click();
 				searchSubmit();
 			}else{
-				layer.alert(data.msg);
+				layer.alert(escHtml(data.msg));
 			}
 		},
 		error:function(data){
@@ -457,11 +474,13 @@ function callreturn(trade_no){
 		success : function(data) {
 			layer.close(ii);
 			if(data.code == 0){
-				$("#vurl").attr("href",data.url);
+				var notifyUrl = safeUiUrl(data.url);
+                if(!notifyUrl){ layer.alert('通知地址无效'); return; }
+                $("#vurl").attr("href",notifyUrl);
 				document.getElementById("vurl").click();
 				searchSubmit();
 			}else{
-				layer.alert(data.msg);
+				layer.alert(escHtml(data.msg));
 			}
 		},
 		error:function(data){
@@ -506,7 +525,7 @@ function refund(trade_no) {
 				layer.open({
 					area: ['360px'],
 					title: '手动退款确认',
-					content: '<p>此操作将从该商户扣除订单分成金额，你需要手动退款给购买者。</p><div class="form-group"><div class="input-group"><div class="input-group-addon">退款金额</div><input type="text" class="form-control" name="refund1" value="'+data.money+'" placeholder="请输入退款金额" autocomplete="off"/></div></div>',
+					content: '<p>此操作将从该商户扣除订单分成金额，你需要手动退款给购买者。</p><div class="form-group"><div class="input-group"><div class="input-group-addon">退款金额</div><input type="text" class="form-control" name="refund1" value="'+escHtml(data.money)+'" placeholder="请输入退款金额" autocomplete="off"/></div></div>',
 					yes: function(){
 						var money = $("input[name='refund1']").val();
 						if(money == ''){
@@ -521,9 +540,9 @@ function refund(trade_no) {
 							success : function(data) {
 								layer.close(ii);
 								if(data.code == 0){
-									layer.alert(data.msg, {icon:1}, function(){ layer.closeAll();searchSubmit(); });
+									layer.alert(escHtml(data.msg), {icon:1}, function(){ layer.closeAll();searchSubmit(); });
 								}else{
-									layer.alert(data.msg, {icon:7});
+									layer.alert(escHtml(data.msg), {icon:7});
 								}
 							},
 							error:function(data){
@@ -534,7 +553,7 @@ function refund(trade_no) {
 					}
 				});
 			}else{
-				layer.alert(data.msg, {icon:7});
+				layer.alert(escHtml(data.msg), {icon:7});
 			}
 		},
 		error:function(data){
@@ -556,7 +575,7 @@ function apirefund(trade_no) {
 				layer.open({
 					area: ['360px'],
 					title: 'API退款确认',
-					content: '<p>此操作将直接原路退款该订单，退款金额不能大于订单金额。</p><div class="form-group"><div class="input-group"><div class="input-group-addon">退款金额</div><input type="text" class="form-control" name="refund2" value="'+data.money+'" placeholder="请输入退款金额" autocomplete="off"/></div></div><div class="form-group"><div class="input-group"><div class="input-group-addon">支付密码</div><input type="text" class="form-control" name="paypwd" value="" placeholder="请输入支付密码" autocomplete="off"/></div></div>',
+					content: '<p>此操作将直接原路退款该订单，退款金额不能大于订单金额。</p><div class="form-group"><div class="input-group"><div class="input-group-addon">退款金额</div><input type="text" class="form-control" name="refund2" value="'+escHtml(data.money)+'" placeholder="请输入退款金额" autocomplete="off"/></div></div><div class="form-group"><div class="input-group"><div class="input-group-addon">支付密码</div><input type="text" class="form-control" name="paypwd" value="" placeholder="请输入支付密码" autocomplete="off"/></div></div>',
 					yes: function(){
 						var money = $("input[name='refund2']").val();
 						var paypwd = $("input[name='paypwd']").val();
@@ -572,9 +591,9 @@ function apirefund(trade_no) {
 							success : function(data) {
 								layer.close(ii);
 								if(data.code == 0){
-									layer.alert(data.msg, {icon:1}, function(){ layer.closeAll();searchSubmit(); });
+									layer.alert(escHtml(data.msg), {icon:1}, function(){ layer.closeAll();searchSubmit(); });
 								}else{
-									layer.alert(data.msg, {icon:7});
+									layer.alert(escHtml(data.msg), {icon:7});
 								}
 							},
 							error:function(data){
@@ -585,7 +604,7 @@ function apirefund(trade_no) {
 					}
 				});
 			}else{
-				layer.alert(data.msg, {icon:7});
+				layer.alert(escHtml(data.msg), {icon:7});
 			}
 		},
 		error:function(data){
@@ -649,9 +668,9 @@ function freeze(trade_no) {
 		success : function(data) {
 			layer.close(ii);
 			if(data.code == 0){
-				layer.alert(data.msg, {icon:1}, function(){ layer.closeAll();searchSubmit(); });
+				layer.alert(escHtml(data.msg), {icon:1}, function(){ layer.closeAll();searchSubmit(); });
 			}else{
-				layer.alert(data.msg);
+				layer.alert(escHtml(data.msg));
 			}
 		},
 		error:function(data){
@@ -670,9 +689,9 @@ function unfreeze(trade_no) {
 		success : function(data) {
 			layer.close(ii);
 			if(data.code == 0){
-				layer.alert(data.msg, {icon:1}, function(){ layer.closeAll();searchSubmit(); });
+				layer.alert(escHtml(data.msg), {icon:1}, function(){ layer.closeAll();searchSubmit(); });
 			}else{
-				layer.alert(data.msg);
+				layer.alert(escHtml(data.msg));
 			}
 		},
 		error:function(data){
@@ -726,9 +745,9 @@ function fillorder(trade_no) {
 			success : function(data) {
 				layer.close(ii);
 				if(data.code == 0){
-					layer.alert(data.msg, {icon:1}, function(){ layer.closeAll();searchSubmit(); });
+					layer.alert(escHtml(data.msg), {icon:1}, function(){ layer.closeAll();searchSubmit(); });
 				}else{
-					layer.alert(data.msg);
+					layer.alert(escHtml(data.msg));
 				}
 			},
 			error:function(data){
@@ -750,9 +769,9 @@ function alipaydSettle(trade_no) {
 		success : function(data) {
 			layer.close(ii);
 			if(data.code == 0){
-				layer.alert(data.msg, {icon:1}, function(){ layer.closeAll();searchSubmit(); });
+				layer.alert(escHtml(data.msg), {icon:1}, function(){ layer.closeAll();searchSubmit(); });
 			}else{
-				layer.alert(data.msg, {icon:2});
+				layer.alert(escHtml(data.msg), {icon:2});
 			}
 		},
 		error:function(data){
@@ -801,9 +820,9 @@ function alipayPreAuthPay(trade_no) {
 		success : function(data) {
 			layer.close(ii);
 			if(data.code == 0){
-				layer.alert(data.msg, {icon:1}, function(){ layer.closeAll();searchSubmit(); });
+				layer.alert(escHtml(data.msg), {icon:1}, function(){ layer.closeAll();searchSubmit(); });
 			}else{
-				layer.alert(data.msg, {icon:2});
+				layer.alert(escHtml(data.msg), {icon:2});
 			}
 		},
 		error:function(data){
@@ -822,9 +841,9 @@ function alipayUnfreeze(trade_no) {
 		success : function(data) {
 			layer.close(ii);
 			if(data.code == 0){
-				layer.alert(data.msg, {icon:1}, function(){ layer.closeAll();searchSubmit(); });
+				layer.alert(escHtml(data.msg), {icon:1}, function(){ layer.closeAll();searchSubmit(); });
 			}else{
-				layer.alert(data.msg, {icon:2});
+				layer.alert(escHtml(data.msg), {icon:2});
 			}
 		},
 		error:function(data){
@@ -840,7 +859,7 @@ function addBlackList(stype, scontent){
 		area: ['380px'],
 		closeBtn: 2,
 		title: '添加黑名单',
-		content: '<div style="padding:15px"><div class="form-group"><div class="input-group"><div class="input-group-addon">'+stitle+'</div><input class="form-control" type="text" name="add_content" value="'+scontent+'" autocomplete="off" ></div></div><div class="form-group"><div class="input-group"><div class="input-group-addon">有效期</div><input class="form-control" type="text" name="add_days" value="0" autocomplete="off" placeholder="0为永久"><div class="input-group-addon">天</div></div></div><div class="form-group"><div class="input-group"><div class="input-group-addon">备注</div><input class="form-control" type="text" name="add_remark" value="" autocomplete="off" placeholder="选填"></div></div></div>',
+		content: '<div style="padding:15px"><div class="form-group"><div class="input-group"><div class="input-group-addon">'+stitle+'</div><input class="form-control" type="text" name="add_content" value="'+escHtml(scontent)+'" autocomplete="off" ></div></div><div class="form-group"><div class="input-group"><div class="input-group-addon">有效期</div><input class="form-control" type="text" name="add_days" value="0" autocomplete="off" placeholder="0为永久"><div class="input-group-addon">天</div></div></div><div class="form-group"><div class="input-group"><div class="input-group-addon">备注</div><input class="form-control" type="text" name="add_remark" value="" autocomplete="off" placeholder="选填"></div></div></div>',
 		btn: ['确认', '取消'],
 		yes: function(){
 			var content = $("input[name='add_content']").val();
@@ -858,9 +877,9 @@ function addBlackList(stype, scontent){
 				success : function(data) {
 					layer.close(ii);
 					if(data.code == 0){
-						layer.alert(data.msg, {icon:1}, function(){ layer.closeAll(); });
+						layer.alert(escHtml(data.msg), {icon:1}, function(){ layer.closeAll(); });
 					}else{
-						layer.alert(data.msg, {icon:0});
+						layer.alert(escHtml(data.msg), {icon:0});
 					}
 				},
 				error:function(data){
@@ -881,9 +900,9 @@ function alipayRedPacketTansfer(trade_no){
 		success : function(data) {
 			layer.close(ii);
 			if(data.code == 0){
-				layer.alert(data.msg, {icon:1}, function(){ layer.closeAll();searchSubmit(); });
+				layer.alert(escHtml(data.msg), {icon:1}, function(){ layer.closeAll();searchSubmit(); });
 			}else{
-				layer.alert(data.msg, {icon:2});
+				layer.alert(escHtml(data.msg), {icon:2});
 			}
 		},
 		error:function(data){
@@ -909,9 +928,9 @@ function showSubOrders(trade_no){
 				for(var i=0; i<list.length; i++){
 					var statustext = status[list[i].status];
 					if(list[i].status == 2 && list[i].refundmoney > 0 && list[i].refundmoney < list[i].money){
-						statustext += '<font color=red>('+list[i].refundmoney+')</font>';
+						statustext += '<font color=red>('+escHtml(list[i].refundmoney)+')</font>';
 					}
-					item += '<tr><td>'+list[i].sub_trade_no+'</td><td>'+list[i].api_trade_no+'</td><td>¥<b>'+list[i].money+'</b></td><td>'+statustext+'</td><td>'+(data.settle>0?settle[list[i].settle]:'')+'</td></tr>';
+					item += '<tr><td>'+escHtml(list[i].sub_trade_no)+'</td><td>'+escHtml(list[i].api_trade_no)+'</td><td>¥<b>'+escHtml(list[i].money)+'</b></td><td>'+statustext+'</td><td>'+(data.settle>0?settle[list[i].settle]:'')+'</td></tr>';
 				}
 				item += '</tbody></table>';
 				var area = [$(window).width() > 680 ? '680px' : '100%'];
@@ -924,7 +943,7 @@ function showSubOrders(trade_no){
 				  content: item
 				});
 			}else{
-				layer.alert(data.msg);
+				layer.alert(escHtml(data.msg));
 			}
 		},
 		error:function(data){

@@ -73,10 +73,11 @@ if(isset($_GET['act']) && $_GET['act']=='login'){
     $password = $plain;
   }
   if($username == $conf['admin_user'] && $password == $conf['admin_pwd']){
-    if ($conf['totp_open'] == 1 && !empty($conf['totp_secret'])) {
+    if (epay_totp_enabled($conf)) {
+      if(!epay_totp_secret_valid($conf['totp_secret'] ?? null)) exit(json_encode(['code'=>-1, 'msg'=>'动态口令配置异常，请联系管理员']));
       session_regenerate_id(true);
       $challenge = bin2hex(random_bytes(32));
-      $_SESSION['admin_totp_challenge'] = ['token'=>$challenge, 'expires'=>time()+120, 'ip'=>$clientip, 'credential'=>hash('sha256', $conf['admin_user'].$conf['admin_pwd'].$conf['totp_secret']), 'attempts'=>0];
+      $_SESSION['admin_totp_challenge'] = ['token'=>$challenge, 'expires'=>time()+120, 'ip'=>$clientip, 'credential'=>epay_admin_session_digest($conf), 'attempts'=>0];
       unset($_SESSION['vc_code']);
       exit(json_encode(['code'=>-1, 'msg'=>'需要验证动态口令', 'vcode'=>2, 'challenge'=>$challenge]));
     }
@@ -84,7 +85,7 @@ if(isset($_GET['act']) && $_GET['act']=='login'){
     if (file_exists($login_limit_file)) {
       unlink($login_limit_file);
     }
-		$session=md5($username.$password.$password_hash);
+		$session=epay_admin_session_digest($conf);
 		$expiretime=time() + 2592000;
 		$token=authcode("{$username}\t{$session}\t{$expiretime}", 'ENCODE', SYS_KEY);
 		epay_set_cookie("admin_token", $token, $expiretime, "/admin");
@@ -117,14 +118,14 @@ if(isset($_GET['act']) && $_GET['act']=='login'){
   }
   $pending = $_SESSION['admin_totp_challenge'] ?? null;
   $submitted = $_POST['challenge'] ?? null;
-  if(!is_array($pending) || $pending['expires'] < time() || $pending['ip'] !== $clientip || $pending['attempts'] >= 5 || !is_string($submitted) || !hash_equals($pending['token'], $submitted) || !hash_equals($pending['credential'], hash('sha256', $conf['admin_user'].$conf['admin_pwd'].$conf['totp_secret']))){
+  if(!is_array($pending) || $pending['expires'] < time() || $pending['ip'] !== $clientip || $pending['attempts'] >= 5 || !is_string($submitted) || !hash_equals($pending['token'], $submitted) || !hash_equals($pending['credential'], epay_admin_session_digest($conf))){
     unset($_SESSION['admin_totp_challenge']);
     exit(json_encode(['code'=>-1,'msg'=>'请重新验证用户名和密码']));
   }
   $_SESSION['admin_totp_challenge']['attempts']++;
   $code = is_string($_POST['code'] ?? null) ? trim($_POST['code']) : '';
   if (empty($code)) exit(json_encode(['code'=>-1,'msg'=>'请输入动态口令']));
-  if ($conf['totp_open'] != 1 || empty($conf['totp_secret'])) {
+  if (!epay_totp_enabled($conf) || !epay_totp_secret_valid($conf['totp_secret'] ?? null)) {
     exit(json_encode(['code'=>-1,'msg'=>'未启用TOTP二次验证']));
   }
   try {
@@ -137,7 +138,7 @@ if(isset($_GET['act']) && $_GET['act']=='login'){
   unset($_SESSION['admin_totp_challenge']);
   session_regenerate_id(true);
   $DB->insert('log', ['uid'=>0, 'type'=>'登录后台', 'date'=>'NOW()', 'ip'=>$clientip]);
-  $session=md5($conf['admin_user'].$conf['admin_pwd'].$password_hash);
+  $session=epay_admin_session_digest($conf);
   $expiretime=time() + 2592000;
   $token=authcode("{$conf['admin_user']}\t{$session}\t{$expiretime}", 'ENCODE', SYS_KEY);
   epay_set_cookie("admin_token", $token, $expiretime, "/admin");
@@ -288,22 +289,27 @@ function submitlogin(){
   });
   return false;
 }
+var loginTotpInFlight = false;
 function doTotp(){
+  if(loginTotpInFlight) return false;
   var code = $("#totp_code").val();
   if(code.length != 6){
 		layer.msg('动态口令格式错误', {icon: 2});
 		return false;
 	}
 	var ii = layer.load(2, {shade:[0.1,'#fff']});
+	loginTotpInFlight = true;
 	$.post('?act=totp', {code:code, challenge:window.totpChallenge}, function(res){
 		layer.close(ii);
 		if(res.code == 0){
 			layer.msg('登录成功，正在跳转', {icon: 1,shade: 0.01,time: 15000});
       window.location.href = './';
 		}else{
+			loginTotpInFlight = false;
 			layer.alert(typeof res.msg === 'string' && res.msg.trim() ? res.msg : '动态口令验证失败：服务器未返回错误详情，请重新验证用户名和密码', {icon: 2});
 		}
 	}, 'json').fail(function(xhr){
+		loginTotpInFlight = false;
 		layer.close(ii);
 		layer.alert('动态口令请求失败（HTTP ' + (xhr.status || '网络错误') + '），请检查浏览器 Cookie 与 PHP 日志', {icon: 2});
 	});
@@ -312,14 +318,6 @@ function doTotp(){
 function findpwd(){
   $('#modal-findpwd').modal('show');
 }
-$(document).ready(function(){
-	$("#totp_code").keyup(function(){
-		var code = $(this).val();
-		if(code.length == 6){
-			$("#totp-form").submit();
-		}
-	});
-});
 </script>
 </body>
 </html>

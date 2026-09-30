@@ -52,7 +52,7 @@ class CommUtil
     public static function task(){
         global $DB, $conf;
         $limit = 10; //每次查询分账的订单数量
-        $list = $DB->getAll("SELECT A.*,B.channel,B.account,B.name,B.rate,B.info,B.uid psuid,C.uid,C.subchannel,C.realmoney ordermoney FROM pre_psorder A INNER JOIN pre_psreceiver B ON B.id=A.rid LEFT JOIN pre_order C ON C.trade_no=A.trade_no WHERE A.status=1 ORDER BY A.id ASC LIMIT {$limit}");
+        $list = $DB->getAll("SELECT A.*,B.channel,B.account,B.name,B.rate,B.info,B.uid psuid,C.uid,C.subchannel,C.realmoney ordermoney FROM pre_psorder A INNER JOIN pre_psreceiver B ON B.id=A.rid LEFT JOIN pre_order C ON C.trade_no=A.trade_no WHERE A.status IN (1,5) ORDER BY A.id ASC LIMIT {$limit}");
         foreach($list as $srow){
             self::process_item($srow);
         }
@@ -73,74 +73,144 @@ class CommUtil
     }
 
     //处理一个订单分账任务
-    public static function process_item($row){
+    public static function loadItem($id){
         global $DB;
-        $id = $row['id'];
-        $channel = $row['subchannel'] > 0 ? \lib\Channel::getSub($row['subchannel']) : \lib\Channel::get($row['channel'], $row['uid']?$DB->findColumn('user', 'channelinfo', ['uid'=>$row['uid']]):null);
-        if(!$channel) return;
-        $model = self::getModel($channel);
-        // status:0-待分账,1-已提交,2-成功,3-失败
-        if($row['status']==0 || $row['status']==3){
-            if($row['money'] == 0){
-                $DB->update('psorder', ['status'=>3,'result'=>'分账金额为0'], ['id'=>$id]);
-                echo $row['trade_no'].' 分账金额为0<br/>';
-                return;
-            }
-            $row['info'] = !empty($row['info']) ? json_decode($row['info'], true) : [['account'=>$row['account'], 'name'=>$row['name'], 'rate'=>$row['rate']]];
-            if(!empty($row['sub_trade_no'])){
-                $row['ordermoney'] = $DB->findColumn('suborder', 'money', ['sub_trade_no'=>$row['sub_trade_no']]);
-                $row['trade_no'] = $row['sub_trade_no'];
-            }
-            $result = $model->submit($row['trade_no'], $row['api_trade_no'], $row['ordermoney'], $row['info']);
-            if($result['code'] == 0){
-                $DB->update('psorder', ['status'=>1,'settle_no'=>$result['settle_no']], ['id'=>$id]);
-            }elseif($result['code'] == 1){
-                $DB->update('psorder', ['status'=>2,'settle_no'=>$result['settle_no']], ['id'=>$id]);
-                if(!empty($row['psuid']) && $channel['mode']==0){
-                    changeUserMoney($row['psuid'], $row['money'], false, '订单分账', $row['trade_no']);
-                }
-            }elseif($result['code'] == -1){
-                $DB->update('psorder', ['status'=>3,'result'=>$result['msg']], ['id'=>$id]);
-                if($row['status']==3) $DB->update('psorder', ['retry'=>1], ['id'=>$id]);
-            }
-            if(isset($result['rdata'])){
-                $DB->update('psorder', ['money'=>$result['money'], 'rdata'=>json_encode($result['rdata'])], ['id'=>$id]);
-            }
-            echo $row['trade_no'].' '.$result['msg'].'<br/>';
-        }elseif($row['status']==1){
-            if(!empty($row['sub_trade_no'])) $row['trade_no'] = $row['sub_trade_no'];
-            $result = $model->query($row['trade_no'], $row['api_trade_no'], $row['settle_no']);
-            if($result['code']==0){
-                if($result['status']==1){
-                    $DB->update('psorder', ['status'=>2], ['id'=>$id]);
-                    if(!empty($row['psuid']) && $channel['mode']==0){
-                        changeUserMoney($row['psuid'], $row['money'], false, '订单分账', $row['trade_no']);
-                    }
-                    $result = '分账成功';
-                }elseif($result['status']==2){
-                    $DB->update('psorder', ['status'=>3,'result'=>$result['reason']], ['id'=>$id]);
-                    $result = '分账失败:'.$result['reason'];
-                }else{
-                    $result = '正在分账';
-                }
-                echo $row['trade_no'].' '.$result.'<br/>';
-            }else{
-                echo $row['trade_no'].' 查询失败:'.$result['msg'].'<br/>';
-            }
-        }
+        return \lib\Finance::row('SELECT A.*,B.channel,B.account,B.name,B.rate,B.info,B.uid psuid,C.uid,C.subchannel,C.realmoney ordermoney FROM pre_psorder A LEFT JOIN pre_psreceiver B ON A.rid=B.id LEFT JOIN pre_order C ON C.trade_no=A.trade_no WHERE A.id=:id',[':id'=>$id]);
     }
 
-    //分账结果异步回调
-    public static function processNotify($trade_no, $status, $errmsg = null, $settle_no = null){
+    // First-submission immutable contract; legacy in-flight rows require evidence, not current config.
+    public static function snapshot($id, $create=false){
         global $DB;
-        $psorder = $DB->find('psorder', '*', ['trade_no'=>$trade_no]);
-        if($psorder){
-            if($psorder['status'] != $status){
-                $data = ['status'=>$status];
-                if($errmsg) $data['result'] = $errmsg;
-                if($settle_no) $data['settle_no'] = $settle_no;
-                $DB->update('psorder', $data, ['id'=>$psorder['id']]);
+        $key='ps:'.$id;
+        $saved=\lib\Finance::row('SELECT payload FROM pre_funds_snapshot WHERE event_key=:k',[':k'=>$key]);
+        if($saved){$v=json_decode($saved['payload'],true);if(!is_array($v) || ($v['v']??0)!==1)throw new \RuntimeException('分账快照损坏');return $v;}
+        if(!$create)throw new \RuntimeException('历史分账无快照，须供应商核对');
+        $row=self::loadItem($id);
+        $channel=$row['subchannel']>0?\lib\Channel::getSub($row['subchannel']):\lib\Channel::get($row['channel'],$row['uid']?$DB->findColumn('user','channelinfo',['uid'=>$row['uid']]):null);
+        if(!$channel)throw new \RuntimeException('分账通道不存在');
+        $info=!empty($row['info'])?json_decode($row['info'],true):[['account'=>$row['account'],'name'=>$row['name'],'rate'=>$row['rate']]];
+        if(!is_array($info) || !$info)throw new \RuntimeException('分账接收方无效');
+        $amount=!empty($row['sub_trade_no'])?$DB->findColumn('suborder','money',['sub_trade_no'=>$row['sub_trade_no']]):$row['ordermoney'];
+        \lib\Finance::cents($amount);
+        $v=['v'=>1,'psuid'=>$row['psuid'],'uid'=>$row['uid'],'mode'=>(int)$channel['mode'],'channel'=>$row['channel'],'subchannel'=>$row['subchannel'],'channel_hash'=>hash('sha256',json_encode($channel)),'info'=>$info,'ordermoney'=>$amount,'money'=>$row['money'],'trade_no'=>$row['sub_trade_no']?:$row['trade_no'],'api_trade_no'=>$row['api_trade_no']];
+        \lib\Finance::checked($DB->insert('funds_snapshot',['event_key'=>$key,'payload'=>json_encode($v,JSON_THROW_ON_ERROR),'addtime'=>'NOW()']));
+        return $v;
+    }
+
+    public static function snapshotChannel($v){
+        global $DB;
+        $channel=$v['subchannel']>0?\lib\Channel::getSub($v['subchannel']):\lib\Channel::get($v['channel'],$v['uid']?$DB->findColumn('user','channelinfo',['uid'=>$v['uid']]):null);
+        if(!$channel || !hash_equals($v['channel_hash'],hash('sha256',json_encode($channel))))throw new \RuntimeException('通道身份/配置已变化，必须核对原供应商');
+        return $channel;
+    }
+
+    // Complete financial state and ledger in the same row-locked transaction.
+    public static function confirm($id,$status,$extra=[]){
+        global $DB;
+        return \lib\Finance::transaction(function() use($DB,$id,$status,$extra){
+            $locked=\lib\Finance::row('SELECT * FROM pre_psorder WHERE id=:id FOR UPDATE',[':id'=>$id]);
+            if(!$locked) throw new \RuntimeException('分账不存在');
+            if((int)$locked['status']==2){if($status!=2)throw new \RuntimeException('分账终态冲突');return true;}
+            if(!in_array((int)$locked['status'],[1,5],true)) throw new \RuntimeException('分账状态未认领');
+            $v=self::snapshot($id);
+            if(!in_array((int)$status,[1,2,3],true))throw new \RuntimeException('分账终态无效');
+            if(isset($extra['money']) && \lib\Finance::cents($extra['money'])!==\lib\Finance::cents($v['money']))throw new \RuntimeException('供应商分账金额与快照不一致');
+            if($status==2 && !empty($v['psuid']) && $v['mode']===0){
+                \lib\Finance::change($v['psuid'],$v['money'],false,'订单分账','ps:'.$id);
             }
-        }
+            $extra['status']=$status;
+            \lib\Finance::checked($DB->update('psorder',$extra,['id'=>$id]));
+            return true;
+        });
+    }
+
+    public static function process_item($row){
+        $result=self::operate($row['id']);
+        echo htmlspecialchars($row['trade_no'].' '.($result['msg']??'待查询'),ENT_QUOTES,'UTF-8').'<br/>';
+        return $result;
+    }
+
+    // 5=durable uncertain intent. Never auto-resubmit a claimed/failing intent.
+    public static function operate($id,$action=null){
+        global $DB;
+        try {
+            if($DB->db->inTransaction()) throw new \RuntimeException('外部资金调用须独立提交intent');
+            $claim=\lib\Finance::transaction(function() use($DB,$id,$action){
+                $o=\lib\Finance::row('SELECT * FROM pre_psorder WHERE id=:id FOR UPDATE',[':id'=>$id]);
+                if(!$o) throw new \RuntimeException('分账不存在');
+                if($o['status']==2) return ['done'=>true];
+                if($action=='submit' && $o['status']!=0) throw new \RuntimeException('原交易已提交或待核对，仅允许查询');
+                if($action==='query' && $o['status']==0) throw new \RuntimeException('未提交分账不能以查询发起付款');
+                if($o['status']==0){
+                    if((float)$o['money']<=0) throw new \RuntimeException('分账金额必须大于0');
+                    self::snapshot($id,true);
+                    \lib\Finance::checked($DB->update('psorder',['status'=>5,'result'=>'已持久化分账intent，待核对'],['id'=>$id,'status'=>0]));
+                    return ['submit'=>true];
+                }
+                if(!in_array((int)$o['status'],[1,5],true)) throw new \RuntimeException('失败分账请先按供应商合同核对，不能自动重试');
+                return ['submit'=>false];
+            });
+            if(isset($claim['done'])) return ['code'=>0,'status'=>1,'msg'=>'分账已成功'];
+            $row=self::loadItem($id);
+            $v=self::snapshot($id);
+            $channel=self::snapshotChannel($v);
+            $model=self::getModel($channel);
+            if(!$model) throw new \RuntimeException('通道不存在');
+            $trade=$v['trade_no'];
+            if($claim['submit']){
+                $r=$model->submit($trade,$v['api_trade_no'],$v['ordermoney'],$v['info']);
+                $extra=[];
+                if(isset($r['settle_no']))$extra['settle_no']=$r['settle_no'];
+                if(isset($r['rdata'])){$extra['rdata']=json_encode($r['rdata']);$extra['money']=number_format((float)$r['money'],2,'.','');}
+                if(($r['code']??-9)==1) self::confirm($id,2,$extra);
+                elseif(($r['code']??-9)==0) self::confirm($id,1,$extra);
+                else return ['code'=>-2,'msg'=>'分账结果未确认，仅可查询原交易'];
+            }else{
+                $r=$model->query($trade,$v['api_trade_no'],$row['settle_no']);
+                if(($r['code']??-1)==0 && ($r['status']??0)==1) self::confirm($id,2);
+                elseif(($r['code']??-1)==0 && ($r['status']??0)==2) self::confirm($id,3,['result'=>$r['reason']??'分账失败，禁止盲目重试']);
+            }
+            return $r;
+        } catch(\Throwable $e){return ['code'=>-2,'msg'=>'分账未完成或待核对，请查询原交易，禁止重复提交'];}
+    }
+
+    public static function reversal($id,$action){
+        global $DB;
+        try {
+            if($DB->db->inTransaction())throw new \RuntimeException('回退必须独立事务');
+            $claim=\lib\Finance::transaction(function() use($DB,$id,$action){
+                $o=\lib\Finance::row('SELECT * FROM pre_psorder WHERE id=:id FOR UPDATE',[':id'=>$id]);
+                if(!$o)throw new \RuntimeException('分账不存在');
+                if(($action=='return' && $o['status']!=2) || ($action=='unfreeeze' && $o['status']!=0))throw new \RuntimeException('当前状态不能回退/取消');
+                self::snapshot($id,$action==='unfreeeze');
+                \lib\Finance::checked($DB->update('psorder',['status'=>$action=='return'?6:7,'result'=>'回退/取消intent已提交，结果待核对'],['id'=>$id]));
+                return $o;
+            });
+            $row=self::loadItem($id);
+            $v=self::snapshot($id);
+            $channel=self::snapshotChannel($v);
+            $model=self::getModel($channel);
+            if(!$model)throw new \RuntimeException('分账通道不存在');
+            $trade=$v['trade_no'];
+            $r=$action=='return'?$model->return($trade,$v['api_trade_no'],$row['settle_no'],json_decode($row['rdata']??'[]',true)?:[]):$model->unfreeeze($trade,$v['api_trade_no']);
+            if(($r['code']??-1)!=0)return ['code'=>-2,'msg'=>'回退/取消结果待核对，禁止重复调用'];
+            \lib\Finance::transaction(function() use($DB,$id,$action,$row,$channel){
+                $o=\lib\Finance::row('SELECT * FROM pre_psorder WHERE id=:id FOR UPDATE',[':id'=>$id]);
+                if($o['status']!=($action=='return'?6:7))throw new \RuntimeException('回退状态冲突');
+                // Existing implementation does not establish whether upstream return restores balance.
+                // Preserve its no-credit semantics until per-provider contract is verified.
+                \lib\Finance::checked($DB->update('psorder',['status'=>4,'result'=>'回退/取消已确认'],['id'=>$id]));
+            });return $r;
+        }catch(\Throwable $e){return ['code'=>-2,'msg'=>'回退/取消未确认，请按供应商原交易核对，禁止重复调用'];}
+    }
+
+    public static function processNotify($trade_no,$status,$errmsg=null,$settle_no=null){
+        global $DB;
+        $o=$DB->find('psorder','*',['trade_no'=>$trade_no]);
+        if(!$o)return;
+        if(!in_array((int)$status,[2,3],true))return;
+        $extra=['result'=>$errmsg??''];
+        if($settle_no)$extra['settle_no']=$settle_no;
+        self::confirm($o['id'],(int)$status,$extra);
     }
 }

@@ -73,6 +73,7 @@ class xunhupay_plugin
 		$client = new XunhupayClient($channel['appid'],$channel['appkey'],$channel['appurl']);
 		$result = $client->do_payment($params);
 		if(checkmobile() || $device=='mobile'){
+			if(!XunhupayClient::safePaymentUrl($result['url'] ?? null)) throw new Exception('支付URL无效');
 			return ['jump', $result['url']];
 		}else{
 			$code_url = $client->parseQrcode($result['url_qrcode']);
@@ -126,17 +127,32 @@ class xunhupay_plugin
 			return ['type'=>'html','data'=>'sign_fail'];
 		}
 
-		if($_POST['status']=='OD'){
+		if(($_POST['status'] ?? null)==='OD'){
 			$out_trade_no = $_POST['trade_order_id'];
-			$order_id = $_POST['open_order_id'];
-			$total_fee = $_POST['total_fee'];
-			if($out_trade_no == TRADE_NO && round($total_fee,2)==round($order['realmoney'],2)){
+			$order_id = $_POST['open_order_id'] ?? null;
+			$total_fee = $_POST['total_fee'] ?? null;
+			if($out_trade_no === TRADE_NO && is_string($order_id) && $order_id !== '' && self::moneyMatch($total_fee,$order['realmoney'])){
 				processNotify($order, $order_id);
+				return ['type'=>'html','data'=>'success'];
 			}
-			return ['type'=>'html','data'=>'success'];
+			return ['type'=>'html','data'=>'fail'];
 		}
 		return ['type'=>'html','data'=>'fail'];
 	}
+
+    private static function moneyMatch($paid, $expected): bool
+    {
+        $normalize = static function ($value) {
+            if (!is_string($value) && !is_int($value) && !is_float($value)) return null;
+            $value = (string)$value;
+            if (!preg_match('/\A[0-9]+(?:\.[0-9]+)?\z/', $value)) return null;
+            $parts = explode('.', $value, 2);
+            return (ltrim($parts[0], '0') ?: '0') . '.' . rtrim($parts[1] ?? '', '0');
+        };
+        $left = $normalize($paid);
+        return $left !== null && $left !== '0.' && $left === $normalize($expected);
+    }
+
 
 	//支付返回页面
 	static public function return(){

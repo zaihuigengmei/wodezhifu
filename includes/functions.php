@@ -684,22 +684,32 @@ function checkBlockUser($openid, $trade_no){
 }
 
 function epay_callback_money_match($paid, $realmoney){
-	if($paid === null || $paid === '') return false;
-	$paid = str_replace([',', ' '], '', (string)$paid);
-	if(!is_numeric($paid) || !is_numeric($realmoney)) return false;
-	$paidFloat = round((float)$paid, 2);
-	$realFloat = round((float)$realmoney, 2);
-	if(abs($paidFloat - $realFloat) < 0.01) return true; // 元
-	$paidCent = (int)round((float)$paid);
-	$realCent = (int)round($realFloat * 100);
-	return $paidCent === $realCent; // 分
+	// Major units only (CNY/HKD as selected by the caller), never guess cents.
+	$normalize = static function($value){
+		if(!is_string($value) && !is_int($value) && !is_float($value)) return false;
+		$text = (string)$value;
+		if(strlen($text) > 128 || !preg_match('/^([0-9]+)(?:\.([0-9]+))?$/D', $text, $parts)) return false;
+		$fraction = rtrim($parts[2] ?? '', '0');
+		// Trailing-zero equivalents are exact; fractional cents must not round up.
+		if(strlen($fraction) > 2) return false;
+		$whole = ltrim($parts[1], '0');
+		return ($whole === '' ? '0' : $whole).'.'.str_pad($fraction, 2, '0');
+	};
+	$actual = $normalize($paid);
+	$expected = $normalize($realmoney);
+	return $actual !== false && $expected !== false && $actual === $expected;
 }
 
 function epay_callback_cent_match($paid, $realmoney){
-	if($paid === null || $paid === '') return false;
-	$paid = str_replace([',', ' '], '', (string)$paid);
-	if(!is_numeric($paid) || !is_numeric($realmoney)) return false;
-	return (int)round((float)$paid) === (int)round((float)$realmoney * 100);
+	// Provider integer minor units versus local major units, without float math.
+	if(!is_string($paid) && !is_int($paid) && !is_float($paid)) return false;
+	$text = (string)$paid;
+	if(strlen($text) > 128 || !preg_match('/^[0-9]+$/D', $text)) return false;
+	$digits = ltrim($text, '0');
+	if($digits === '') $digits = '0';
+	$digits = str_pad($digits, 3, '0', STR_PAD_LEFT);
+	$major = substr($digits, 0, -2).'.'.substr($digits, -2);
+	return epay_callback_money_match($major, $realmoney);
 }
 
 function processReturn($order, $api_trade_no=null, $buyer=null, $bill_trade_no = null, $bill_mch_trade_no = null, $end_time = null){
@@ -710,7 +720,22 @@ function processNotify($order, $api_trade_no=null, $buyer=null, $bill_trade_no =
 	\lib\Payment::processOrder(true, $order, $api_trade_no, $buyer, $bill_trade_no, $bill_mch_trade_no, $end_time);
 }
 
-function processOrder(&$srow,$notify=true){
+function epay_run_order_effects($effects){
+    foreach ($effects as $effect) {
+        try { $effect(); }
+        catch (\Throwable $e) { error_log('Epay post-commit order effect failed; reconcile notification/refund/notice'); }
+    }
+}
+
+function processOrder(&$srow,$notify=true,&$effects=null){
+    global $DB;
+    if ($effects !== null) throw new \RuntimeException('入账effects仅允许Payment受控入口');
+    $srow = \lib\Payment::processOrder($notify, $srow, $srow['api_trade_no'] ?? null, $srow['buyer'] ?? null, null, null, null, false);
+    return $srow;
+}
+
+function epay_account_order(&$srow,$notify,&$effects,$permit=null){
+    \lib\Payment::consumeAccountingPermit($permit, $srow['trade_no'] ?? null);
 	global $DB,$CACHE,$conf,$channel;
 	$addmoney = $srow['getmoney'];
 	$reducemoney = round($srow['realmoney']-$srow['getmoney'], 2);
@@ -720,7 +745,7 @@ function processOrder(&$srow,$notify=true){
 	if(!empty($channel['costrate']) && $channel['costrate'] > 0){
 		$profitmoney = round($profitmoney - $srow['realmoney'] * $channel['costrate'] / 100, 2);
 	}
-	$DB->update('order', ['profitmoney'=>$profitmoney], ['trade_no'=>$srow['trade_no']]);
+	\lib\Finance::checked($DB->update('order', ['profitmoney'=>$profitmoney], ['trade_no'=>$srow['trade_no']]));
 
 	if($srow['tid']==1){ //商户注册
 		changeUserMoney($srow['uid'], $addmoney, true, '订单收入', $srow['trade_no']);
@@ -728,21 +753,21 @@ function processOrder(&$srow,$notify=true){
 		if($info){
 			$key = random(32);
 			$paystatus = $conf['user_review']==1?2:1;
-			$sds=$DB->exec("INSERT INTO `pre_user` (`upid`, `key`, `money`, `email`, `phone`, `addtime`, `pay`, `settle`, `keylogin`, `apply`, `status`) VALUES (:upid, :key, '0.00', :email, :phone, NOW(), :paystatus, 1, 0, 0, 1)", [':upid'=>$info['upid'], ':key'=>$key, ':email'=>$info['email'], ':phone'=>$info['phone'], ':paystatus'=>$paystatus]);
+			$sds=\lib\Finance::checked($DB->exec("INSERT INTO `pre_user` (`upid`, `key`, `money`, `email`, `phone`, `addtime`, `pay`, `settle`, `keylogin`, `apply`, `status`) VALUES (:upid, :key, '0.00', :email, :phone, NOW(), :paystatus, 1, 0, 0, 1)", [':upid'=>$info['upid'], ':key'=>$key, ':email'=>$info['email'], ':phone'=>$info['phone'], ':paystatus'=>$paystatus]));
 			$uid=$DB->lastInsertId();
 			$pwd = getMd5Pwd($info['pwd'], $uid);
-			$DB->exec("UPDATE `pre_user` SET `pwd`='{$pwd}' WHERE `uid`='$uid'");
+			\lib\Finance::checked($DB->exec("UPDATE `pre_user` SET `pwd`='{$pwd}' WHERE `uid`='$uid'"));
 			if($sds){
 				if(!empty($info['email'])){
 					$sub = $conf['sitename'].' - 注册成功通知';
 					$msg = '<h2>商户注册成功通知</h2>感谢您注册'.$conf['sitename'].'！<br/>您的登录账号：'.$info['email'].'<br/>您的商户ID：'.$uid.'<br/>您的商户秘钥：'.$key.'<br/>'.$conf['sitename'].'官网：<a href="http://'.$_SERVER['HTTP_HOST'].'/" target="_blank">'.$_SERVER['HTTP_HOST'].'</a><br/>【<a href="http://'.$_SERVER['HTTP_HOST'].'/user/" target="_blank">商户管理后台</a>】';
-					send_mail($info['email'], $sub, $msg);
+					$effects[] = function() use ($info, $sub, $msg){ send_mail($info['email'], $sub, $msg); };
 				}
 				if(isset($info['invitecodeid']) && $info['invitecodeid']>0){
-					$DB->update('invitecode', ['status'=>1, 'uid'=>$uid, 'usetime'=>'NOW()'], ['id'=>$info['invitecodeid']]);
+					\lib\Finance::checked($DB->update('invitecode', ['status'=>1, 'uid'=>$uid, 'usetime'=>'NOW()'], ['id'=>$info['invitecodeid']]));
 				}
 				if($paystatus == 2){
-					\lib\MsgNotice::send('regaudit', 0, ['uid'=>$uid, 'account'=>$info['email']?$info['email']:$info['phone']]);
+					$effects[] = function() use ($uid, $info){ \lib\MsgNotice::send('regaudit', 0, ['uid'=>$uid, 'account'=>$info['email']?$info['email']:$info['phone']]); };
 				}
 			}
 		}
@@ -761,13 +786,13 @@ function processOrder(&$srow,$notify=true){
 			if($black){
 				$srow['black'] = true;
 				$params = ['trade_no'=>$srow['trade_no'], 'money'=>$srow['realmoney'], 'key'=>md5($srow['trade_no'].SYS_KEY.$srow['trade_no'])];
-				get_curl($conf['localurl'].'api.php?act=refundapi', http_build_query($params));
+				$effects[] = function() use ($conf, $params){ get_curl($conf['localurl'].'api.php?act=refundapi', http_build_query($params)); };
 				return;
 			}
 		}
 	}else if($srow['tid']==4){ //购买用户组
 		$param = json_decode($srow['param'], true);
-		changeUserGroup($param['uid'], $param['gid'], $param['endtime']);
+		\lib\Finance::checked(changeUserGroup($param['uid'], $param['gid'], $param['endtime']));
 
 		$upid = $DB->findColumn('user', 'upid', ['uid'=>$param['uid']]);
 		if($upid > 0){
@@ -783,9 +808,7 @@ function processOrder(&$srow,$notify=true){
 		}
 	}else if($srow['tid']==5){ //充值保证金
 		$param = json_decode($srow['param'], true);
-		$userrow = $DB->find('user', 'deposit', ['uid'=>$param['uid']]);
-		$deposit = $userrow['deposit'] > 0 ? round($userrow['deposit'] + $srow['money'], 2) : $srow['money'];
-		$DB->exec("UPDATE pre_user SET deposit=:deposit WHERE uid=:uid", [':deposit'=>$deposit, ':uid'=>$param['uid']]);
+		\lib\Finance::deposit($param['uid'], $srow['money'], $srow['trade_no']);
 	}else{
 		if($channel['mode']==1){
 			if($reducemoney>0)
@@ -797,25 +820,24 @@ function processOrder(&$srow,$notify=true){
 			$black = $DB->find('blacklist', '*', ['type'=>0, 'content'=>$srow['buyer']], null, 1);
 			if($black){
 				$srow['black'] = true;
-				$DB->exec("UPDATE pre_order SET notify=-1 WHERE trade_no='{$srow['trade_no']}'");
+				\lib\Finance::checked($DB->exec("UPDATE pre_order SET notify=-1 WHERE trade_no='{$srow['trade_no']}'"));
 				if($conf['black_payact'] == 2){
 					$params = ['trade_no'=>$srow['trade_no'], 'money'=>$srow['realmoney'], 'key'=>md5($srow['trade_no'].SYS_KEY.$srow['trade_no'])];
-            		get_curl($conf['localurl'].'api.php?act=refundapi', http_build_query($params));
+            		$effects[] = function() use ($conf, $params){ get_curl($conf['localurl'].'api.php?act=refundapi', http_build_query($params)); };
 				}
 				return;
 			}
 		}
-		$url=creat_callback($srow);
-		if(do_notify($url['notify'])){
-			$DB->exec("UPDATE pre_order SET notify=0 WHERE trade_no='{$srow['trade_no']}'");
-		}elseif($notify==true){
-			//通知时间：1分钟，3分钟，20分钟，1小时，2小时
-			$DB->exec("UPDATE pre_order SET notify=1,notifytime=date_add(now(), interval 1 minute) WHERE trade_no='{$srow['trade_no']}'");
-		}
+		// Durable retry marker precedes any external merchant notification.
+        \lib\Finance::checked($DB->exec("UPDATE pre_order SET notify=1,notifytime=date_add(now(), interval 1 minute) WHERE trade_no=:trade", [':trade'=>$srow['trade_no']]));
+        $effects[] = function() use ($srow, $DB){
+            $url = creat_callback($srow);
+            if (do_notify($url['notify'])) \lib\Finance::checked($DB->update('order', ['notify'=>0], ['trade_no'=>$srow['trade_no']]));
+        };
 	}
 	if($srow['tid']==0 || $srow['tid']==3){
 		//发送订单通知
-		\lib\MsgNotice::send('order', $srow['uid'], ['trade_no'=>$srow['trade_no'], 'out_trade_no'=>$srow['out_trade_no'], 'name'=>$srow['name'], 'money'=>$srow['money'], 'type'=>$srow['typeshowname'], 'time'=>date('Y-m-d H:i:s'), 'tid'=>$srow['tid'], 'remark'=>$srow['param']]);
+		$effects[] = function() use ($srow){ \lib\MsgNotice::send('order', $srow['uid'], ['trade_no'=>$srow['trade_no'], 'out_trade_no'=>$srow['out_trade_no'], 'name'=>$srow['name'], 'money'=>$srow['money'], 'type'=>($srow['typeshowname'] ?? $srow['type']), 'time'=>date('Y-m-d H:i:s'), 'tid'=>$srow['tid'], 'remark'=>$srow['param']]); };
 
 		//邀请返现
 		if(!$conf['invite_mode']){
@@ -842,6 +864,7 @@ function processOrder(&$srow,$notify=true){
 			}
 		}
 	}
+    $effects[] = function() use ($channel, $srow, $CACHE, $DB){
 	if($channel['daytop']>0){
 		$cachekey = 'daytop'.$channel['id'].date("Ymd");
 		$nowmoney = $CACHE->read($cachekey);
@@ -849,13 +872,14 @@ function processOrder(&$srow,$notify=true){
 		$nowmoney=round($nowmoney+$srow['realmoney'], 2);
 		$CACHE->save($cachekey, $nowmoney, 86400);
 		if($nowmoney>=$channel['daytop']){
-			$DB->exec("UPDATE pre_channel SET daystatus=1 WHERE id='{$channel['id']}'");
+			\lib\Finance::checked($DB->exec("UPDATE pre_channel SET daystatus=1 WHERE id='{$channel['id']}'"));
 		}
 	}
+    };
 	if($channel['daymaxorder'] > 0){
 		$orders = $DB->getColumn("SELECT COUNT(*) FROM pre_order WHERE channel='{$channel['id']}' AND status>0 AND date=CURDATE()");
 		if($orders >= $channel['daymaxorder']){
-			$DB->exec("UPDATE pre_channel SET daystatus=1 WHERE id='{$channel['id']}'");
+			\lib\Finance::checked($DB->exec("UPDATE pre_channel SET daystatus=1 WHERE id='{$channel['id']}'"));
 		}
 	}
 	if($srow['profits']>0){ //订单分账处理
@@ -885,11 +909,11 @@ function processOrder(&$srow,$notify=true){
 								$allpsmoney += $psmoney;
 							}
 						}
-						$DB->insert('psorder', ['rid'=>$psreceiver['id'], 'trade_no'=>$srow['trade_no'], 'sub_trade_no'=>$sub_order['sub_trade_no'], 'api_trade_no'=>$sub_order['api_trade_no'], 'money'=>round($allpsmoney, 2), 'status'=>$status, 'addtime'=>'NOW()', 'delay'=>$delay, 'rdata'=>json_encode($rdata)]);
+						\lib\Finance::checked($DB->insert('psorder', ['rid'=>$psreceiver['id'], 'trade_no'=>$srow['trade_no'], 'sub_trade_no'=>$sub_order['sub_trade_no'], 'api_trade_no'=>$sub_order['api_trade_no'], 'money'=>round($allpsmoney, 2), 'status'=>$status, 'addtime'=>'NOW()', 'delay'=>$delay, 'rdata'=>json_encode($rdata)]));
 					}
 				}
 			}else{
-				$DB->insert('psorder', ['rid'=>$psreceiver['id'], 'trade_no'=>$srow['trade_no'], 'api_trade_no'=>$srow['api_trade_no'], 'money'=>round($allpsmoney, 2), 'status'=>$status, 'addtime'=>'NOW()', 'delay'=>$delay, 'rdata'=>json_encode($rdata)]);
+				\lib\Finance::checked($DB->insert('psorder', ['rid'=>$psreceiver['id'], 'trade_no'=>$srow['trade_no'], 'api_trade_no'=>$srow['api_trade_no'], 'money'=>round($allpsmoney, 2), 'status'=>$status, 'addtime'=>'NOW()', 'delay'=>$delay, 'rdata'=>json_encode($rdata)]));
 			}
 		}
 	}
@@ -1658,4 +1682,38 @@ function get_ip_region($ip){
 	}else{
 		return $region[1].$region[2].$region[3];
 	}
+}
+/** Durable local business receipt; caller owns business+ledger transaction. */
+function epay_business_once($key, $payload, $uids, $callback){
+    global $DB;
+    return \lib\Finance::transaction(function() use ($DB,$key,$payload,$uids,$callback){
+        $uids=array_unique(array_map('intval',$uids));sort($uids,SORT_NUMERIC);
+        foreach($uids as $id){
+            if($id<=0 || !\lib\Finance::row('SELECT uid FROM pre_user WHERE uid=:uid FOR UPDATE',[':uid'=>$id])) throw new \RuntimeException('业务账户不存在');
+        }
+        $encoded=json_encode($payload,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
+        $existing=\lib\Finance::row('SELECT payload FROM pre_funds_snapshot WHERE event_key=:key FOR UPDATE',[':key'=>$key]);
+        if($existing){
+            if($existing['payload']!==$encoded) throw new \RuntimeException('重复业务参数不一致');
+            return false;
+        }
+        $callback();
+        \lib\Finance::checked($DB->insert('funds_snapshot',['event_key'=>$key,'payload'=>$encoded,'addtime'=>'NOW()']));
+        return true;
+    });
+}
+
+function epay_complete_certification($uid,$token,$fee,$extra=[]){
+    global $DB;
+    return \lib\Finance::transaction(function() use($DB,$uid,$token,$fee,$extra){
+        $user=\lib\Finance::row('SELECT cert,certtoken FROM pre_user WHERE uid=:uid FOR UPDATE',[':uid'=>$uid]);
+        if(!$user) throw new \RuntimeException('认证账户不存在');
+        if((int)$user['cert']===1) return false;
+        if($token!==null && (!is_scalar($token) || (string)$token==='' || !hash_equals((string)$user['certtoken'],(string)$token))) throw new \RuntimeException('认证请求已失效');
+        if(\lib\Finance::cents($fee)>0) \lib\Finance::change($uid,$fee,false,'实名认证','cert:'.$uid,true);
+        $data=['cert'=>1,'certtime'=>'NOW()'];
+        if(isset($extra['alipay_uid']))$data['alipay_uid']=$extra['alipay_uid'];
+        \lib\Finance::checked($DB->update('user',$data,['uid'=>$uid]));
+        return true;
+    });
 }

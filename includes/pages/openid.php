@@ -39,7 +39,7 @@ if(!defined('IN_CRONLITE'))exit();
         <a href="javascript:;" class="weui-btn weui-btn_warn" id="Close">关闭</a>
     </div>
     <div class="weui-form__extra-area">
-        <div class="weui-footer"><p class="weui-footer__links"></p><p class="weui-footer__text">Copyright © <?php echo date("Y")?> <?php echo $conf['sitename']?></p></div>
+        <div class="weui-footer"><p class="weui-footer__links"></p><p class="weui-footer__text">Copyright © <?php echo date("Y")?> <?php echo htmlspecialchars((string)($conf['sitename']), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8')?></p></div>
     </div>
 </div>
 </div>

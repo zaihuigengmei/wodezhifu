@@ -976,6 +976,7 @@ class alipay_plugin
 		if($verify_result){
 			if($_POST['personal_product_code'] == 'FUND_SAFT_SIGN_WITHHOLDING_P'){
 				if($_POST['status'] == 'NORMAL'){
+					if(!class_exists('\\lib\\AlipaySATF\\AlipaySATF')) return ['type'=>'html','data'=>'fail'];
 					(new \lib\AlipaySATF\AlipaySATF())->signNotify($_POST);
 				}
 			}
@@ -1001,18 +1002,22 @@ class alipay_plugin
 			}elseif($_POST['msg_method'] == 'alipay.fund.trans.order.changed'){ //资金单据状态变更通知
 				$bizContent = json_decode($_POST['biz_content'], true);
 				if($bizContent && $bizContent['product_code'] == 'FUND_ACCOUNT_BOOK' && $bizContent['biz_scene'] == 'SATF_DEPOSIT'){ //记账本充值回调
+					if(!class_exists('\\lib\\AlipaySATF\\AlipaySATF')) return ['type'=>'html','data'=>'fail'];
 					(new \lib\AlipaySATF\AlipaySATF())->rechargeNotify($bizContent);
 
 				}elseif($bizContent && $bizContent['product_code'] == 'SINGLE_TRANSFER_NO_PWD' && $bizContent['biz_scene'] == 'ENTRUST_TRANSFER'){ //转账下发回调
+					if(!class_exists('\\lib\\AlipaySATF\\AlipaySATF')) return ['type'=>'html','data'=>'fail'];
 					(new \lib\AlipaySATF\AlipaySATF())->transferNotify($bizContent);
 
 				}elseif($bizContent && $bizContent['product_code'] == 'SINGLE_TRANSFER_NO_PWD' && $bizContent['biz_scene'] == 'ENTRUST_ALLOCATION'){ //记账本调拨回调
+					if(!class_exists('\\lib\\AlipaySATF\\AlipaySATF')) return ['type'=>'html','data'=>'fail'];
 					(new \lib\AlipaySATF\AlipaySATF())->transferNotify($bizContent);
 
 				}
 			}elseif($_POST['msg_method'] == 'alipay.fund.expandindirect.order.changed'){ //资金二级商户KYB代进件状态通知接口
 				$bizContent = json_decode($_POST['biz_content'], true);
 				if($bizContent && isset($bizContent['order_id'])){
+					if(!class_exists('\\lib\\AlipaySATF\\AlipaySATF')) return ['type'=>'html','data'=>'fail'];
 					(new \lib\AlipaySATF\AlipaySATF())->applyNotify($bizContent);
 				}
 			}elseif($_POST['msg_method'] == 'alipay.security.risk.complaints.merchants.notify'){ //商户交易投诉通知

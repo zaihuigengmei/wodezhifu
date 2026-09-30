@@ -248,16 +248,59 @@ class BaseService
 	 */
     public function download(string $download_url)
     {
-        $method = 'GET';
-        $authorization = $this->getAuthorization($method, $download_url);
-        $header[] = 'Authorization: WECHATPAY2-SHA256-RSA2048 ' . $authorization;
-        [$httpCode, $header, $response] = $this->curl($method, $download_url, $header);
-        if ($httpCode >= 200 && $httpCode <= 299) {
-            return $response;
-        } else {
-            $result = json_decode($response, true);
-            throw new WeChatPayException($result, $httpCode);
+        // Preserve the provider origin: do not leak the Authorization header to arbitrary URLs.
+        $parts = parse_url($download_url);
+        $host = $parts['host'] ?? '';
+        if (!$parts || ($parts['scheme'] ?? '') !== 'https' || $host !== 'api.mch.weixin.qq.com'
+            || isset($parts['user']) || isset($parts['pass']) || isset($parts['fragment'])
+            || (isset($parts['port']) && $parts['port'] !== 443) || preg_match('/[\x00-\x20\x7f]/', $download_url)) throw new Exception('微信下载地址不合法');
+        $answers = dns_get_record($host, DNS_A | DNS_AAAA);
+        $ips = [];
+        foreach ($answers ?: [] as $answer) {
+            $ip = $answer['ip'] ?? $answer['ipv6'] ?? null;
+            if ($ip === null) continue;
+            if (!filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)
+                || (strpos($ip, ':') === false && preg_match('/^(100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\.|192\.0\.0\.)/', $ip))
+                || (strpos($ip, ':') !== false && (substr(bin2hex(inet_pton($ip)), 0, 1) !== '2' && substr(bin2hex(inet_pton($ip)), 0, 1) !== '3'))
+                || (strpos($ip, ':') !== false && (substr(bin2hex(inet_pton($ip)), 0, 4) === '2002'
+                    || (substr(bin2hex(inet_pton($ip)), 0, 4) === '2001' && hexdec(substr(bin2hex(inet_pton($ip)), 4, 4)) < 512)
+                    || substr(bin2hex(inet_pton($ip)), 0, 7) === '20010db'
+                    || substr(bin2hex(inet_pton($ip)), 0, 5) === '3fff0'))) throw new Exception('微信下载DNS地址不合法');
+            $ips[] = $ip;
         }
+        if (!$ips) throw new Exception('微信下载DNS解析失败');
+        $ip = $ips[0];
+        $authorization = $this->getAuthorization('GET', $download_url);
+        $ch = curl_init($download_url);
+        $response = ''; $oversize = false; $headerBytes = 0;
+        try {
+            curl_setopt_array($ch, [
+                CURLOPT_HTTPHEADER => ['Authorization: WECHATPAY2-SHA256-RSA2048 ' . $authorization],
+                CURLOPT_PROXY => '', CURLOPT_NOPROXY => '*',
+                CURLOPT_RESOLVE => [$host.':443:'.(strpos($ip, ':') !== false ? '['.$ip.']' : $ip)],
+                CURLOPT_SSL_VERIFYPEER => true, CURLOPT_SSL_VERIFYHOST => 2,
+                CURLOPT_PROTOCOLS => CURLPROTO_HTTPS, CURLOPT_REDIR_PROTOCOLS => CURLPROTO_HTTPS,
+                CURLOPT_FOLLOWLOCATION => false, CURLOPT_MAXREDIRS => 0,
+                CURLOPT_CONNECTTIMEOUT => 10, CURLOPT_TIMEOUT => 60,
+                CURLOPT_RETURNTRANSFER => false,
+                CURLOPT_HEADERFUNCTION => static function ($ch, $line) use (&$oversize, &$headerBytes) {
+                    $headerBytes += strlen($line);
+                    if ($headerBytes > 65536) return 0;
+                    if (preg_match('/^Content-Length:\s*(\d+)/i', $line, $m) && (float)$m[1] > 10485760) { $oversize = true; return 0; }
+                    return strlen($line);
+                },
+                CURLOPT_WRITEFUNCTION => static function ($ch, $chunk) use (&$response, &$oversize) {
+                    if (strlen($response) + strlen($chunk) > 10485760) { $oversize = true; return 0; }
+                    $response .= $chunk; return strlen($chunk);
+                },
+            ]);
+            $ok = curl_exec($ch);
+            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            if ($oversize) throw new Exception('微信下载超过大小限制');
+            if ($ok === false) throw new Exception('微信下载传输失败');
+            if ($httpCode >= 200 && $httpCode <= 299) return $response;
+            throw new Exception('微信下载HTTP错误: '.$httpCode);
+        } finally { curl_close($ch); }
     }
 
 	/**

@@ -4,9 +4,9 @@ $clientip=real_ip($conf['ip_type']?$conf['ip_type']:0);
 if(isset($_COOKIE["admin_token"]))
 {
 	$token=authcode(daddslashes($_COOKIE['admin_token']), 'DECODE', SYS_KEY);
-	list($user, $sid, $expiretime) = explode("\t", $token);
-	$session=md5($conf['admin_user'].$conf['admin_pwd'].$password_hash);
-	if($session==$sid && $expiretime>time()) {
+	[$user, $sid, $expiretime] = array_pad(explode("\t", $token, 3), 3, null);
+	$session=epay_admin_session_digest($conf);
+	if(is_string($sid) && hash_equals($session, $sid) && $user === $conf['admin_user'] && $expiretime>time() && (!epay_totp_enabled($conf) || epay_totp_secret_valid($conf['totp_secret'] ?? null))) {
 		$islogin=1;
 	}
 }
@@ -20,6 +20,18 @@ if(isset($_COOKIE["user_token"]))
 	if($userrow && is_string($sid) && hash_equals($session, $sid) && $expiretime>time()) {
 		$islogin2=1;
 	}
+}
+// Factor state is part of every admin cookie and challenge version.
+function epay_totp_enabled(array $config){
+    return array_key_exists('totp_open', $config) && (string)$config['totp_open'] !== '0';
+}
+function epay_totp_secret_valid($secret){
+    // Existing 16-character secrets remain usable; newly enrolled secrets require 160 bits.
+    return is_string($secret) && preg_match('/^[A-Z2-7]{16,128}$/Di', $secret) === 1;
+}
+function epay_admin_session_digest(array $config){
+    global $password_hash;
+    return hash_hmac('sha256', json_encode([(string)$config['admin_user'], (string)$config['admin_pwd'], (string)($config['totp_open'] ?? '0'), (string)($config['totp_secret'] ?? '')]), $password_hash);
 }
 // Include the stored password so password changes revoke every older merchant cookie.
 function epay_user_session_digest(array $row){

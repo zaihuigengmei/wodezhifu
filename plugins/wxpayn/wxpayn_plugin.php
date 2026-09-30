@@ -773,6 +773,15 @@ class wxpayn_plugin
 		}
 	}
 
+    static private function privateReceipt($client, $url, $context) {
+        // Signed WeChat API supplies this URL. Only the SDK gateway origin is accepted.
+        $parts = is_string($url) ? parse_url($url) : false;
+        if (!$parts || ($parts['scheme'] ?? '') !== 'https' || ($parts['host'] ?? '') !== 'api.mch.weixin.qq.com'
+            || isset($parts['user']) || isset($parts['pass']) || isset($parts['fragment'])
+            || (isset($parts['port']) && $parts['port'] !== 443)) throw new Exception('微信回单下载地址不合法');
+        return \lib\PrivateReceipt::store($context, $client->download($url), 'pdf');
+    }
+
 	//电子回单
 	static public function transfer_proof($channel, $bizParam){
 		global $conf;
@@ -784,23 +793,20 @@ class wxpayn_plugin
 
 		$wechatpay_config = require(PLUGIN_ROOT.'wxpayn/inc/config.php');
 		try{
+			$receiptContext = \lib\PrivateReceipt::context($channel, $bizParam);
 			$client = new \WeChatPay\V3\TransferService($wechatpay_config);
 			if(!isset($_SESSION['ereceipt_'.$bizParam['out_biz_no']])){
 				$result = $client->transferDetailReceiptApply($bizParam['out_biz_no'], $bizParam['out_biz_no']);
 				$_SESSION['ereceipt_'.$bizParam['out_biz_no']] = $result['signature_no'];
 			}
-			if($result['signature_status'] == 'FINISHED'){
-				return ['code'=>0, 'msg'=>'电子回单生成成功！', 'download_url'=>$result['download_url']];
+			if(($result['signature_status'] ?? null) == 'FINISHED'){
+				return self::privateReceipt($client, $result['download_url'], $receiptContext);
 			}
 
 			usleep(300000);
 			$result = $client->transferDetailReceiptQuery($bizParam['out_biz_no'], $bizParam['out_biz_no']);
 			if($result['signature_status'] == 'FINISHED'){
-				$file_content = $client->download($result['download_url']);
-				$file_md5 = md5($file_content);
-				file_put_contents(ROOT.'assets/uploads/'.$file_md5.'.pdf', $file_content);
-				$download_url = $siteurl.'assets/uploads/'.$file_md5.'.pdf';
-				return ['code'=>0, 'msg'=>'电子回单生成成功！', 'download_url'=>$download_url];
+				return self::privateReceipt($client, $result['download_url'], $receiptContext);
 			}else{
 				return ['code'=>0, 'msg'=>'电子回单正在生成中，请稍后再试！'];
 			}
@@ -979,21 +985,18 @@ class wxpayn_plugin
 
 		$wechatpay_config = require(PLUGIN_ROOT.'wxpayn/inc/config.php');
 		try{
+			$receiptContext = \lib\PrivateReceipt::context($channel, $bizParam);
 			$client = new \WeChatPay\V3\TransferService($wechatpay_config);
 			if(!isset($_SESSION['ereceipt_'.$bizParam['out_biz_no']])){
 				$result = $client->transferReceiptApply($bizParam['out_biz_no']);
 				$_SESSION['ereceipt_'.$bizParam['out_biz_no']] = '1';
 			}
-			if($result['state'] == 'GENERATING'){
+			if(($result['state'] ?? null) == 'GENERATING'){
 				usleep(300000);
 			}
 			$result = $client->transferReceiptQuery($bizParam['out_biz_no']);
 			if($result['state'] == 'FINISHED'){
-				$file_content = $client->download($result['download_url']);
-				$file_md5 = md5($file_content);
-				file_put_contents(ROOT.'assets/uploads/'.$file_md5.'.pdf', $file_content);
-				$download_url = $siteurl.'assets/uploads/'.$file_md5.'.pdf';
-				return ['code'=>0, 'msg'=>'电子回单生成成功！', 'download_url'=>$download_url];
+				return self::privateReceipt($client, $result['download_url'], $receiptContext);
 			}elseif($result['state'] == 'FAILED'){
 				return ['code'=>0, 'msg'=>'电子回单生成失败：'.$result['fail_reason']];
 			}else{

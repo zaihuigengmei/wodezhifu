@@ -64,13 +64,19 @@ class epusdtapi_plugin
 
     public static function submit(): array
     {
+        require_once __DIR__.'/Checkout.php';
+        return epusdtapiCheckout::run(static function () { return self::createPayment(); }, true);
+    }
+
+    private static function createPayment(): array
+    {
         global $siteurl, $channel, $order, $conf, $DB;
+        foreach ($channel as $value) { if ($value !== null && !is_scalar($value)) return ['type'=>'error','msg'=>'Invalid channel configuration']; }
+        if (!is_string($order['realmoney']) && !is_int($order['realmoney'])) return ['type'=>'error','msg'=>'Invalid fiat amount'];
+        if (!preg_match('/\A[0-9]+(?:\.[0-9]{1,2})?\z/', (string)$order['realmoney'])) return ['type'=>'error','msg'=>'Invalid fiat amount'];
 
         // Sub2API/外部系统可能会重复打开同一笔 Epay 订单。
         // GMPay 的 order_id 要求唯一，重复创建会返回 10002；因此成功创建后必须复用本地已保存的 payurl。
-        if (!empty($order['payurl'])) {
-            return ['type' => 'jump', 'url' => $order['payurl']];
-        }
 
         [$token, $network] = self::parseTradeType((string)$order['typename']);
         if ($token === '' || $network === '') {
@@ -95,17 +101,16 @@ class epusdtapi_plugin
         if (!is_array($data)) {
             return ['type' => 'error', 'msg' => '请求失败，请检查服务器是否能正常请求 Epusdt 网关'];
         }
-        if ((int)($data['status_code'] ?? 0) !== 200) {
+        if (!self::validScalars(array_diff_key($data, ['data'=>true])) || (string)($data['status_code'] ?? '') !== '200') {
             $msg = (string)($data['message'] ?? '未知错误');
             $requestId = (string)($data['request_id'] ?? '');
             return ['type' => 'error', 'msg' => 'Epusdt 下单失败：' . $msg . ($requestId !== '' ? '（request_id: ' . $requestId . '）' : '')];
         }
 
         $paymentUrl = $data['data']['payment_url'] ?? '';
-        if ($paymentUrl === '') {
+        if (!is_string($paymentUrl) || $paymentUrl === '') {
             return ['type' => 'error', 'msg' => 'Epusdt 下单成功但未返回 payment_url'];
         }
-        $DB->update('order', ['payurl' => $paymentUrl], ['trade_no' => TRADE_NO]);
         return ['type' => 'jump', 'url' => $paymentUrl];
     }
 
@@ -189,8 +194,10 @@ class epusdtapi_plugin
 
     private static function formatAmount($amount): string
     {
-        $formatted = number_format((float)$amount, 2, '.', '');
-        return rtrim(rtrim($formatted, '0'), '.');
+        if (!is_string($amount) && !is_int($amount)) throw new \InvalidArgumentException('Invalid fiat amount');
+        $amount = (string)$amount;
+        if (!preg_match('/\A[0-9]+(?:\.[0-9]{1,2})?\z/', $amount)) throw new \InvalidArgumentException('Invalid fiat amount');
+        return strpos($amount, '.') === false ? $amount : rtrim(rtrim($amount, '0'), '.');
     }
 
     private static function gateway(string $appurl): string
@@ -241,6 +248,7 @@ class epusdtapi_plugin
     private static function postForm(string $url, array $parameter)
     {
         $ch = curl_init();
+        if (!function_exists('epay_prepare_outbound_curl') || !epay_prepare_outbound_curl($ch, $url)) { curl_close($ch); return null; }
         curl_setopt($ch, CURLOPT_URL, $url);
         curl_setopt($ch, CURLOPT_POST, true);
         curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($parameter));

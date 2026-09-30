@@ -37,7 +37,7 @@ tbody tr>td:nth-child(5){max-width:300px;word-break: break-all;}
 	<select name="type" class="form-control"><option value="">付款方式</option><option value="alipay">支付宝</option><option value="wxpay">微信</option><option value="qqpay">QQ钱包</option><option value="bank">银行卡</option></select>
   </div>
   <div class="form-group">
-	<select name="dstatus" class="form-control"><option value="-1">全部状态</option><option value="0">正在处理</option><option value="1">转账成功</option><option value="2">转账失败</option><option value="3">待处理</option></select>
+	<select name="dstatus" class="form-control"><option value="-1">全部状态</option><option value="0">正在处理</option><option value="1">转账成功</option><option value="2">转账失败</option><option value="3">待处理</option><option value="4">待领取</option><option value="5">付款待核对</option><option value="6">撤销待核对</option></select>
   </div>
   <button type="submit" class="btn btn-primary">搜索</button>
   <div class="btn-group">
@@ -175,6 +175,7 @@ $(document).ready(function(){
 				title: '状态',
 				events: {'click .show-qrcode': function(e, value, row){e.preventDefault(); showQrcode(row.jumpurl, row.type);}},
 				formatter: function(value, row, index) {
+					if(value == '5' || value == '6') return '<a href="javascript:queryStatus(\''+uiJs(row.biz_no)+'\')"><font color=orange>'+ (value == '5' ? '付款待核对' : '撤销待核对')+'</font></a>';
 					if(value == '1'){
 						return '<font color=green>转账成功</font>';
 					}else if(value == '2'){
@@ -192,6 +193,7 @@ $(document).ready(function(){
 				field: 'status',
 				title: '操作',
 				formatter: function(value, row, index) {
+					if(row.status == '5' || row.status == '6') return '<a href="javascript:queryStatus(\''+uiJs(row.biz_no)+'\')" class="btn btn-default btn-xs">查询原交易</a> <span>禁止重付/重复撤销</span>';
 					let html = '';
 					if(row.status == '1'){
 						html += '<a href="javascript:setStatusFail(\''+row.biz_no+'\')" class="btn btn-warning btn-xs">改为失败</a> <a href="javascript:delItem(\''+row.biz_no+'\')" class="btn btn-danger btn-xs">删除</a><br/>';

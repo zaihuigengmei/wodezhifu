@@ -331,10 +331,34 @@ class heepay_plugin
 		return ['type'=>'wxapp','data'=>['appId'=>'wxfac21f54eeaabb58', 'miniProgramId'=>'gh_5c5293af946b', 'path'=>'pages/init/init?token_id='.$token_id]];
 	}
 
+	static private function callbackValid($data, $channel, $order) {
+        foreach (['result','agent_id','jnet_bill_no','agent_bill_id','pay_type','pay_amt','remark','sign'] as $key) {
+            if (!isset($data[$key]) || !is_string($data[$key]) || strlen($data[$key])>1024) return false;
+        }
+        return true;
+    }
+    static private function callbackBound($data, $channel, $order) {
+        $types = ['alipay'=>['22'], 'wxpay'=>['30'], 'bank'=>['20','34','64']];
+        $normalize = static function($value) {
+            if ((!is_string($value) && !is_int($value)) || !preg_match('/^(0|[1-9][0-9]{0,11})(?:\.([0-9]+))?$/D', (string)$value, $m) || strlen((string)$value)>32) return null;
+            $fraction = rtrim($m[2] ?? '', '0');
+            if (strlen($fraction)>2) return null;
+            $amount = $m[1].'.'.str_pad($fraction,2,'0');
+            return $amount==='0.00' ? null : $amount;
+        };
+        $amount = $normalize($data['pay_amt']);
+        return $data['result']==='1' && $data['agent_id']===(string)$channel['appid']
+            && $data['agent_bill_id']===(string)TRADE_NO && $data['agent_bill_id']===(string)$order['trade_no']
+            && preg_match('/^[A-Za-z0-9_-]{1,128}$/D',$data['jnet_bill_no'])
+            && in_array($data['pay_type'],$types[$order['typename'] ?? ''] ?? [],true)
+            && $amount!==null && $amount===$normalize($order['realmoney']);
+    }
+
 	//异步回调
 	static public function notify(){
 		global $channel, $order;
 
+		if (!self::callbackValid($_GET, $channel, $order)) return ['type'=>'error','msg'=>'通知字段不合法'];
 		$signstr = 'result='.$_GET['result'].'&agent_id='.$_GET['agent_id'].'&jnet_bill_no='.$_GET['jnet_bill_no'].'&agent_bill_id='.$_GET['agent_bill_id'].'&pay_type='.$_GET['pay_type'].'&pay_amt='.$_GET['pay_amt'].'&remark='.$_GET['remark'].'&key='.$channel['appkey'];
 		$sign = md5($signstr);
 
@@ -344,9 +368,11 @@ class heepay_plugin
 				$api_trade_no = $_GET['jnet_bill_no'];
 				$money = $_GET['pay_amt'];
 
-				if ($out_trade_no == TRADE_NO && round($money,2)==round($order['realmoney'],2)) {
-					processNotify($order, $api_trade_no, $_GET['pay_user'], $_GET['trade_bill_no']);
-				}
+				if (self::callbackBound($_GET, $channel, $order)) {
+					processNotify($order, $api_trade_no, null, null);
+				}else{
+                    return ['type'=>'html','data'=>'error'];
+                }
 				return ['type'=>'html','data'=>'ok'];
 			}else{
 				return ['type'=>'html','data'=>'result='.$_GET['result']];
@@ -360,6 +386,7 @@ class heepay_plugin
 	static public function return(){
 		global $channel, $order;
 
+		if (!self::callbackValid($_GET, $channel, $order)) return ['type'=>'error','msg'=>'通知字段不合法'];
 		$signstr = 'result='.$_GET['result'].'&agent_id='.$_GET['agent_id'].'&jnet_bill_no='.$_GET['jnet_bill_no'].'&agent_bill_id='.$_GET['agent_bill_id'].'&pay_type='.$_GET['pay_type'].'&pay_amt='.$_GET['pay_amt'].'&remark='.$_GET['remark'].'&key='.$channel['appkey'];
 		$sign = md5($signstr);
 
@@ -369,8 +396,8 @@ class heepay_plugin
 				$api_trade_no = $_GET['jnet_bill_no'];
 				$money = $_GET['pay_amt'];
 
-				if ($out_trade_no == TRADE_NO && round($money,2)==round($order['realmoney'],2)) {
-					processReturn($order, $api_trade_no, $_GET['pay_user']);
+				if (self::callbackBound($_GET, $channel, $order)) {
+					processReturn($order, $api_trade_no, null);
 				}else{
 					return ['type'=>'error','msg'=>'订单信息校验失败'];
 				}

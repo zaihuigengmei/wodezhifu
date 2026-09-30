@@ -7,6 +7,28 @@ $title='系统设置';
 include './head.php';
 if($islogin==1){}else exit("<script language='javascript'>window.location.href='./login.php';</script>");
 // Escape only when rendering HTML attributes or text; keep stored settings unchanged.
+function setting_logo_png($tmp, $destination){
+    $size = @filesize($tmp);
+    if($size === false || $size < 1 || $size > 2*1024*1024) throw new RuntimeException('图片不能超过2MB');
+    $info = @getimagesize($tmp);
+    if(!$info || !in_array($info['mime'], ['image/png','image/jpeg','image/gif','image/webp'], true)) throw new RuntimeException('只允许上传 PNG/JPG/GIF/WEBP 图片');
+    if($info[0] < 1 || $info[1] < 1 || $info[0] > 4096 || $info[1] > 4096 || $info[0]*$info[1] > 8000000) throw new RuntimeException('图片尺寸过大');
+    if(!function_exists('imagecreatefromstring') || !function_exists('imagepng')) throw new RuntimeException('服务器缺少 GD 图片处理扩展，无法安全上传');
+    $siteRoot = realpath(ROOT);
+    $assetRoot = realpath(ROOT.'assets');
+    $parent = realpath(dirname($destination));
+    if($siteRoot === false || $assetRoot === false || strpos($assetRoot, $siteRoot.DIRECTORY_SEPARATOR) !== 0 || $parent === false || strpos($parent, $assetRoot.DIRECTORY_SEPARATOR) !== 0 || is_link($destination)) throw new RuntimeException('图片保存路径不安全');
+    $image = @imagecreatefromstring(file_get_contents($tmp));
+    if(!$image) throw new RuntimeException('图片解码失败');
+    imagealphablending($image, false);
+    imagesavealpha($image, true);
+    $stage = tempnam($parent, '.logo-');
+    if($stage === false){ imagedestroy($image); throw new RuntimeException('图片保存失败'); }
+    try {
+        if(!imagepng($image, $stage) || !rename($stage, $destination)) throw new RuntimeException('图片保存失败');
+        @chmod($destination, 0644);
+    } finally { imagedestroy($image); if(is_file($stage)) unlink($stage); }
+}
 function setting_html($value){ return htmlspecialchars((string)$value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'); }
 ?>
   <div class="container" style="padding-top:70px;">
@@ -232,20 +254,36 @@ $("select[name='homepage']").change(function(){
 }elseif($mod=='account_n' && $_POST['do']=='submit'){
 	if(!checkRefererHost())exit;
 	csrf_check_page('admin');
-	$user=trim($_POST['user']);
-	$oldpwd=trim($_POST['oldpwd']);
-	$newpwd=trim($_POST['newpwd']);
-	$newpwd2=trim($_POST['newpwd2']);
-	if($user==null)showmsg('用户名不能为空！',3);
-	saveSetting('admin_user',$user);
-	if(!empty($newpwd) && !empty($newpwd2)){
-		if($oldpwd!=$conf['admin_pwd'])showmsg('旧密码不正确！',3);
-		if($newpwd!=$newpwd2)showmsg('两次输入的密码不一致！',3);
-		saveSetting('admin_pwd',$newpwd);
+	if(($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST'){ http_response_code(405); exit('请使用POST提交'); }
+	foreach(['user','oldpwd','newpwd','newpwd2'] as $key){
+		if(!is_string($_POST[$key] ?? null)) showmsg('账号表单参数不完整或格式错误',3);
 	}
-	$ad=$CACHE->clear();
-	if($ad)showmsg('修改成功！请重新登录',1);
-	else showmsg('修改失败！<br/>'.$DB->error(),4);
+	$user=trim($_POST['user']);
+	$oldpwd=$_POST['oldpwd'];
+	$newpwd=$_POST['newpwd'];
+	$newpwd2=$_POST['newpwd2'];
+	if($user==='' || strlen($user)>100 || preg_match('/[\x00-\x1f\x7f]/', $user))showmsg('用户名不能为空、过长或包含控制字符',3);
+	// Validate the entire form and current credentials before the first write, even for username-only changes.
+	if(!hash_equals((string)$conf['admin_pwd'], $oldpwd))showmsg('旧密码不正确！',3);
+	if($newpwd!==$newpwd2)showmsg('两次输入的密码不一致！',3);
+	if($newpwd!=='' && (strlen($newpwd)<6 || strlen($newpwd)>100))showmsg('密码须为6到100位',3);
+	if(epay_totp_enabled($conf)){
+		$code=$_POST['current_code'] ?? null;
+		if(!epay_totp_secret_valid($conf['totp_secret'] ?? null) || !is_string($code) || !preg_match('/^[0-9]{6}$/D',$code))showmsg('请输入当前动态口令',3);
+		try { if(!\lib\TOTP::create($conf['totp_secret'])->verify($code))showmsg('当前动态口令错误',3); }
+		catch(Exception $e){ showmsg('当前动态口令验证失败',3); }
+	}
+	try {
+		if($DB->beginTransaction()===false)throw new RuntimeException('begin');
+		$sql='REPLACE INTO pre_config (k,v) VALUES (:userkey,:user)';
+		$params=[':userkey'=>'admin_user',':user'=>$user];
+		if($newpwd!==''){ $sql.=',(:pwdkey,:pwd)'; $params[':pwdkey']='admin_pwd'; $params[':pwd']=$newpwd; }
+		if($DB->exec($sql,$params)===false || $DB->commit()===false)throw new RuntimeException('write');
+	}catch(Throwable $e){ try{$DB->rollBack();}catch(Throwable $ignored){} showmsg('修改失败，请重试',4); }
+	if($CACHE->clear()===false)showmsg('配置已写入但缓存清除失败，请重新登录检查',4);
+	unset($_SESSION['admin_totp_challenge'],$_SESSION['totp_reset_ticket']);
+	epay_delete_cookie('admin_token','/admin');
+	showmsg('修改成功！请重新登录',1);
 }elseif($mod=='account'){
 ?>
 <div class="panel panel-primary">
@@ -258,7 +296,7 @@ $("select[name='homepage']").change(function(){
 	</div><br/>
 	<div class="form-group">
 	  <label class="col-sm-2 control-label">旧密码</label>
-	  <div class="col-sm-10"><input type="password" name="oldpwd" value="" class="form-control" placeholder="请输入当前的管理员密码"/></div>
+	  <div class="col-sm-10"><input type="password" name="oldpwd" value="" class="form-control" placeholder="请输入当前的管理员密码" required/></div>
 	</div><br/>
 	<div class="form-group">
 	  <label class="col-sm-2 control-label">新密码</label>
@@ -272,7 +310,8 @@ $("select[name='homepage']").change(function(){
 	  <div class="col-sm-offset-2 col-sm-10"><input type="submit" name="submit" value="修改" class="btn btn-primary form-control"/><br/>
 	 </div>
 	</div>
-  </form>
+  <?php if(epay_totp_enabled($conf)){ ?><div class="form-group"><label class="col-sm-2 control-label">当前动态口令</label><div class="col-sm-10"><input type="text" name="current_code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" class="form-control" required/></div></div><?php } ?>
+</form>
 </div>
 </div>
 <div class="panel panel-primary">
@@ -1218,7 +1257,7 @@ $(document).ready(function(){
 	  <label class="col-sm-3 control-label">开启企业认证方式</label>
 	  <div class="col-sm-9"><select class="form-control" name="cert_corpopen" default="<?php echo setting_html($conf['cert_corpopen'])?>"><option value="0">关闭</option><option value="1">开启</option></select></div>
 	</div><br/>
-	<div id="setform6" style="<?php echo $conf['cert_corpopen']!=1?'display:none;':null; ?>">
+	<div id="cert_corp_fields" style="<?php echo $conf['cert_corpopen']!=1?'display:none;':null; ?>">
 	<div class="form-group">
 	  <label class="col-sm-3 control-label">企业信息校验接口APPCODE</label>
 	  <div class="col-sm-9"><input type="text" name="cert_appcode2" value="<?php echo setting_html($conf['cert_appcode2'])?>" class="form-control" placeholder=""/></div>
@@ -1335,9 +1374,9 @@ $("select[name='cert_open']").change(function(){
 });
 $("select[name='cert_corpopen']").change(function(){
 	if($(this).val() == 1){
-		$("#setform6").show();
+		$("#cert_corp_fields").show();
 	}else{
-		$("#setform6").hide();
+		$("#cert_corp_fields").hide();
 	}
 });
 $("select[name='ocr_type']").change(function(){
@@ -1967,15 +2006,13 @@ echo '<div class="panel panel-primary">
 if(($_POST['s']??null)==1){
 if(!checkRefererHost())exit;
 csrf_check_page('admin');
-if(empty($_FILES['file']) || !is_uploaded_file($_FILES['file']['tmp_name'])) exit('上传文件不存在');
-if($_FILES['file']['size'] > 2*1024*1024) exit('图片不能超过2MB');
-$info = @getimagesize($_FILES['file']['tmp_name']);
-if(!$info || !in_array($info['mime'], ['image/png','image/jpeg','image/gif','image/webp'], true)) exit('只允许上传 PNG/JPG/GIF/WEBP 图片');
-if(move_uploaded_file($_FILES['file']['tmp_name'], ROOT.'assets/img/logo.png')){
-	echo "成功上传文件!<br>（可能需要清空浏览器缓存才能看到效果，按Ctrl+F5即可一键刷新缓存）";
-}else{
-	echo "上传失败，可能没有文件写入权限";
-}
+if(($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') { http_response_code(405); exit('请使用POST上传'); }
+if(empty($_FILES['file']) || !is_array($_FILES['file']) || ($_FILES['file']['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK || !is_string($_FILES['file']['tmp_name'] ?? null) || !is_uploaded_file($_FILES['file']['tmp_name'])) exit('上传文件不存在或上传失败');
+try {
+    setting_logo_png($_FILES['file']['tmp_name'], ROOT.'assets/img/logo.png');
+    echo "成功上传文件!<br>（可能需要清空浏览器缓存才能看到效果，按Ctrl+F5即可一键刷新缓存）";
+} catch(RuntimeException $e) { echo setting_html($e->getMessage()); }
+
 }
 echo '<form action="set.php?mod=upimg" method="POST" enctype="multipart/form-data"><label for="file"></label><input type="file" name="file" id="file" /><input type="hidden" name="s" value="1" /><input type="hidden" name="csrf_token" value="'.setting_html(csrf_token('admin')).'" /><br><input type="submit" class="btn btn-primary btn-block" value="确认上传" /></form><br>现在的图片：<br><img src="../assets/img/logo.png?r='.rand(10000,99999).'" style="max-width:100%">';
 echo '</div></div>';
@@ -2030,10 +2067,11 @@ function saveSetting(obj){
 				  window.location.reload()
 				});
 			}else{
-				layer.alert(data.msg, {icon: 2})
+				layer.alert(data.msg || '操作失败，请重试', {icon: 2})
 			}
 		},
 		error:function(data){
+			layer.close(ii);
 			layer.msg('服务器错误');
 			return false;
 		}
@@ -2061,10 +2099,11 @@ function changeTemplate(template){
 				  window.location.reload()
 				});
 			}else{
-				layer.alert(data.msg, {icon: 2})
+				layer.alert(data.msg || '操作失败，请重试', {icon: 2})
 			}
 		},
 		error:function(data){
+			layer.close(ii);
 			layer.msg('服务器错误');
 			return false;
 		}
@@ -2095,6 +2134,7 @@ function testproxy(){
 			}
 		},
 		error:function(data){
+			layer.close(ii);
 			layer.msg('服务器错误');
 			return false;
 		}

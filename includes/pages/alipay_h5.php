@@ -28,7 +28,7 @@ if (!defined('IN_PLUGIN'))
                     <h1>¥<?php echo $order['realmoney'] ?></h1>
                     <ul class="nk-activity">
                         <li class="nk-activity-item">
-                            <span>商品名称：<?php echo $order['name'] ?></span>
+                            <span>商品名称：<?php echo htmlspecialchars((string)($order['name']), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') ?></span>
                         </li>
                         <li class="nk-activity-item">
                             <span>商户订单号：<?php echo $order['trade_no'] ?></span>

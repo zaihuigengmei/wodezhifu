@@ -58,7 +58,8 @@ class Transfer
             throw new Exception('转账交易号不能为空');
         }
         if(!$order){
-            if(class_exists('\\lib\\AlipaySATF\\AlipaySATF') && $conf['alipay_satf']==1){
+            if(($conf['alipay_satf'] ?? 0)==1){
+                if(!class_exists('\\lib\\AlipaySATF\\AlipaySATF')) throw new Exception('安全发SATF SDK类缺失，无法查询原交易，请联系管理员');
                 if(!empty($queryArr['biz_no'])){
                     $biz_no = trim($queryArr['biz_no']);
                     $order = $DB->find('satf_transfer', 'trade_no', ['trade_no'=>$biz_no, 'uid'=>$pid]);
@@ -105,7 +106,7 @@ class Transfer
             $order = $DB->find('transfer', 'biz_no', ['biz_no'=>$biz_no, 'uid'=>$pid]);
         }elseif(!empty($queryArr['out_biz_no'])){
             $out_biz_no = trim($queryArr['out_biz_no']);
-            $order = $DB->find('transfer', 'biz_no', ['biz_no'=>$out_biz_no, 'uid'=>$pid]);
+            $order = $DB->find('transfer', 'biz_no', ['out_biz_no'=>$out_biz_no, 'uid'=>$pid]);
         }else{
             throw new Exception('转账交易号不能为空');
         }

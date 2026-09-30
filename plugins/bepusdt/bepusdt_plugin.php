@@ -75,7 +75,20 @@ class bepusdt_plugin
 
     public static function submit(): array
     {
+        require_once __DIR__.'/Checkout.php';
+        return bepusdtCheckout::run(static function () { return self::createPayment(); }, true);
+    }
+
+    private static function createPayment(): array
+    {
         global $siteurl, $channel, $order, $conf;
+        foreach ($channel as $value) { if ($value !== null && !is_scalar($value)) return ['type'=>'error','msg'=>'Invalid channel configuration']; }
+        if (!is_string($order['realmoney']) && !is_int($order['realmoney'])) return ['type'=>'error','msg'=>'Invalid fiat amount'];
+        if (!preg_match('/\A[0-9]+(?:\.[0-9]{1,2})?\z/', (string)$order['realmoney'])) return ['type'=>'error','msg'=>'Invalid fiat amount'];
+        // Deployed Go float64 API requires JSON numbers. Bound to non-exponent range
+        // and verify round-trip equality before signing the same numeric value.
+        $amount = (float)$order['realmoney'];
+        if ($amount >= 1000000 || !self::moneyMatch($amount, $order['realmoney'])) return ['type'=>'error','msg'=>'Unsupported fiat amount'];
 
         $parameter              = [
             'fiat'         => trim($channel['fiat']),
@@ -85,7 +98,7 @@ class bepusdt_plugin
             'name'         => $order['name'],
             'timeout'      => intval($channel['timeout']),
             'rate'         => strval($channel['rate']),
-            'amount'       => floatval($order['realmoney']),
+            'amount'       => (float)$order['realmoney'],
             'notify_url'   => $conf['localurl'] . 'pay/notify/' . TRADE_NO . '/',
             'redirect_url' => $siteurl . 'pay/return/' . TRADE_NO . '/',
         ];
@@ -98,12 +111,12 @@ class bepusdt_plugin
             return ['type' => 'error', 'msg' => '请求失败，请检查服务器是否能正常请求 BEpusdt 网关！'];
         }
 
-        if ($data['status_code'] != 200) {
+        if (!self::validScalars(array_diff_key($data, ['data'=>true])) || (string)($data['status_code'] ?? '') !== '200') {
 
-            return ['type' => 'error', 'msg' => '请求失败，错误信息：' . $data['message']];
+            return ['type' => 'error', 'msg' => '请求失败，错误信息：' . (string)($data['message'] ?? '')];
         }
 
-        return ['type' => 'jump', 'url' => $data['data']['payment_url']];
+        return ['type' => 'jump', 'url' => ($data['data']['payment_url'] ?? null)];
     }
 
     public static function notify()
@@ -198,6 +211,7 @@ class bepusdt_plugin
         $header[] = 'Content-Type: application/json';
 
         $ch = curl_init();
+        if (!function_exists('epay_prepare_outbound_curl') || !epay_prepare_outbound_curl($ch, $url)) { curl_close($ch); return null; }
         curl_setopt($ch, CURLOPT_URL, $url);
         curl_setopt($ch, CURLOPT_POST, true);
         curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($json));

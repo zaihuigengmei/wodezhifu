@@ -32,9 +32,9 @@ if(!defined('IN_PLUGIN'))exit();
 <div class="detail" id="orderDetail">
 <dl class="detail-ct" style="display: none;">
 <dt>商家</dt>
-<dd id="storeName"><?php echo $sitename?></dd>
+<dd id="storeName"><?php echo htmlspecialchars((string)($sitename), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8')?></dd>
 <dt>购买物品</dt>
-<dd id="productName"><?php echo $order['name']?></dd>
+<dd id="productName"><?php echo htmlspecialchars((string)($order['name']), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8')?></dd>
 <dt>商户订单号</dt>
 <dd id="billId"><?php echo $order['trade_no']?></dd>
 <dt>创建时间</dt>

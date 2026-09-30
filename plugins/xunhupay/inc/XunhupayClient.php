@@ -36,20 +36,20 @@ class XunhupayClient
 		$publicParams = [
 			'appid' => $this->appid,
 			'time' => time(),
-			'nonce_str' => str_shuffle(time())
+			'nonce_str' => bin2hex(random_bytes(16))
 		];
 		$params = array_merge($publicParams, $params);
 		$params['hash'] = $this->generate_hash($params, $this->appsecret);
 		$response = $this->curl_post($url, json_encode($params));
 		$result = json_decode($response, true);
-		if(isset($result['errcode']) && $result['errcode']==0){
+		if(is_array($result) && $this->validScalars($result) && isset($result['errcode']) && (string)$result['errcode']==='0'){
 			$hash = $this->generate_hash($result, $this->appsecret);
-			if(!isset($result['hash']) || $hash !== $hash){
+			if(!$this->verify($result)){
 				throw new \Exception('返回数据签名校验失败');
 			}
 			return $result;
 		}else{
-			throw new \Exception($result['errmsg']?$result['errmsg']:'返回数据解析失败');
+			throw new \Exception(is_array($result) && is_string($result['errmsg'] ?? null) ? $result['errmsg'] : '返回数据解析失败');
 		}
 	}
 
@@ -59,25 +59,30 @@ class XunhupayClient
 		if($redirect_url){
 			$url = getSubstr($redirect_url, 'data=', '&');
 			if($url){
-				return base64_decode($url);
+				$decoded = base64_decode($url, true);
+				if(!self::safePaymentUrl($decoded, true)) throw new \Exception('二维码支付URL无效');
+				return $decoded;
 			}
 		}else{
 			$url = getSubstr($url_qrcode, 'data=', '&');
 			if($url){
-				return base64_decode($url);
+				$decoded = base64_decode($url, true);
+				if(!self::safePaymentUrl($decoded, true)) throw new \Exception('二维码支付URL无效');
+				return $decoded;
 			}
 		}
 		throw new \Exception('获取二维码链接失败');
 	}
 
 	public function verify($arr){
-		if(!isset($arr['hash'])) return false;
+		if(!is_array($arr) || !$this->validScalars($arr) || !is_string($arr['hash'] ?? null) || !preg_match('/\A[0-9a-f]{32}\z/', $arr['hash'])) return false;
 		$hash = $this->generate_hash($arr, $this->appsecret);
-		return $hash === $arr['hash'];
+		return hash_equals($hash, $arr['hash']);
 	}
 
 	private function curl_post($url, $post, $timeout = 10){
 		$ch = curl_init($url);
+		if(!function_exists('epay_prepare_outbound_curl') || !epay_prepare_outbound_curl($ch, $url)){ curl_close($ch); throw new \Exception('网关URL被安全策略拒绝'); }
 		curl_setopt($ch, CURLOPT_TIMEOUT, $timeout);
 		curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
 		curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
@@ -97,6 +102,7 @@ class XunhupayClient
 
 	private function get_redirect_url($url, $timeout = 10){
 		$ch = curl_init($url);
+		if(!function_exists('epay_prepare_outbound_curl') || !epay_prepare_outbound_curl($ch, $url)){ curl_close($ch); throw new \Exception('网关URL被安全策略拒绝'); }
 		curl_setopt($ch, CURLOPT_TIMEOUT, $timeout);
 		curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
 		curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
@@ -108,11 +114,28 @@ class XunhupayClient
 		curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
 		curl_exec($ch);
 		$redirect_url = curl_getinfo($ch, CURLINFO_REDIRECT_URL);
+		if($redirect_url && !self::safePaymentUrl($redirect_url)) { curl_close($ch); throw new \Exception('二维码重定向URL无效'); }
 		curl_close($ch);
 		return $redirect_url;
 	}
 
+    private function validScalars(array $data): bool {
+        foreach ($data as $value) {
+            if ($value !== null && !is_string($value) && !is_int($value) && !is_float($value)) return false;
+            if (is_float($value) && !is_finite($value)) return false;
+        }
+        return true;
+    }
+    public static function safePaymentUrl($url, bool $qr=false): bool {
+        if (!is_string($url) || strlen($url)>8192 || preg_match('/[\x00-\x20\x7f\\\\<>"]/', $url)) return false;
+        $p=parse_url($url);
+        if (!$p || !isset($p['scheme'],$p['host']) || isset($p['user']) || isset($p['pass'])) return false;
+        $schemes=$qr ? ['http','https','weixin','alipays'] : ['http','https'];
+        return in_array(strtolower($p['scheme']),$schemes,true);
+    }
+
 	private function generate_hash($param, $key){
+		if(!is_array($param) || !$this->validScalars($param)) throw new \Exception('签名参数类型无效');
 		ksort($param);
 		$signstr = '';
 	

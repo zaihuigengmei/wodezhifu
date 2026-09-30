@@ -70,7 +70,8 @@ class Transfer
         }
 
         if($uid > 0){
-            if(class_exists('\\lib\\AlipaySATF\\AlipaySATF') && $conf['alipay_satf']==1 && ($type=='alipay' || $type=='bank' && $conf['transfer_alipay']==$conf['transfer_bank'])){
+            if(($conf['alipay_satf'] ?? 0)==1 && ($type=='alipay' || $type=='bank' && $conf['transfer_alipay']==$conf['transfer_bank'])){
+                if(!class_exists('\\lib\\AlipaySATF\\AlipaySATF')) return ['code'=>-2,'msg'=>'安全发SATF已配置但SDK类缺失，无法付款，请联系管理员补齐并审核SDK；未改用普通代付'];
                 if(!$bookid) $bookid = $DB->findColumn('satf_account_book', 'id', ['uid'=>$uid, 'status'=>1], 'money DESC');
                 $satf = new \lib\AlipaySATF\AlipaySATF();
                 $params = [
@@ -85,65 +86,67 @@ class Transfer
             }
         }
 
-        $trans = $DB->find('transfer', '*', ['out_biz_no' => $out_biz_no, 'uid' => $uid]);
-        if($trans) return ['code'=>-1, 'msg'=>'该交易号已存在，请更换交易号'];
+        try {
+            if($DB->db->inTransaction()) throw new \RuntimeException('付款不得在未提交事务内调用');
+            Finance::cents($money);
+            if(Finance::cents($money)<=0) throw new \RuntimeException('金额必须大于0');
+            $intent = Finance::transaction(function() use ($DB, $uid, $type, $out_biz_no, $biz_no, $channelid, $payee_account, $payee_real_name, $money, $title, $desc, $conf){
+                // uid=0 also needs a stable serialization point for duplicate external IDs.
+                Finance::checked($DB->query('SELECT uid FROM pre_user ORDER BY uid LIMIT 1 FOR UPDATE'));
+                $u = $uid>0 ? Finance::row('SELECT * FROM pre_user WHERE uid=:uid FOR UPDATE', [':uid'=>$uid]) : null;
+                $old = $DB->find('transfer', '*', ['uid'=>$uid,'out_biz_no'=>$out_biz_no]);
+                if($old){
+                    if($old['type']!=$type || $old['account']!=$payee_account || $old['username']!=$payee_real_name || Finance::cents($old['money'])!=Finance::cents($money)) throw new \RuntimeException('交易号参数不一致');
+                    return ['existing'=>$old];
+                }
+                $cost = $money;
+                if($uid>0){
+                    if(!$u || !$u['settle']) throw new \RuntimeException('商户无法使用代付');
+                    $cost = number_format(round($money*(1+($conf['transfer_rate']?:$conf['settle_rate'])/100),2),2,'.','');
+                    $available = Finance::cents($u['money']);
+                    if($conf['settle_type']==1) $available -= Finance::cents(number_format((float)$DB->getColumn('SELECT COALESCE(SUM(realmoney),0) FROM pre_order WHERE uid=:uid AND tid<>2 AND status=1 AND endtime>=:day', [':uid'=>$uid,':day'=>date('Y-m-d').' 00:00:00']),2,'.',''));
+                    if(Finance::cents($cost)>$available) throw new \RuntimeException('需支付金额大于可转账余额');
+                }
+                Finance::checked($DB->insert('transfer', ['biz_no'=>$biz_no,'out_biz_no'=>$out_biz_no,'uid'=>$uid,'type'=>$type,'channel'=>$channelid,'account'=>$payee_account,'username'=>$payee_real_name,'money'=>$money,'costmoney'=>$cost,'addtime'=>'NOW()','status'=>$channelid==-1?3:5,'desc'=>$title?:$desc,'result'=>'待核对：已持久化付款intent，禁止重新提交']));
+                if($uid>0) Finance::change($uid,$cost,false,'代付',$biz_no,true);
+                return ['cost'=>$cost];
+            });
+            if(isset($intent['existing'])){
+                $old=$intent['existing'];
+                return ['code'=>in_array((int)$old['status'],[0,1,3],true)?0:-2,'status'=>$old['status'],'biz_no'=>$old['biz_no'],'out_biz_no'=>$out_biz_no,'orderid'=>$old['pay_order_no'],'msg'=>'该交易已存在，请查询原交易；禁止重复付款'];
+            }
+            if($channelid==-1) return ['code'=>0,'status'=>3,'biz_no'=>$biz_no,'out_biz_no'=>$out_biz_no,'msg'=>'提交成功！等待管理员审核'];
+            try { $result=self::submit($type,$channel,$biz_no,$payee_account,$payee_real_name,$money,$title,$desc); }
+            catch(\Throwable $e){ return ['code'=>-2,'biz_no'=>$biz_no,'msg'=>'付款结果不确定，请查询原交易，禁止重新提交']; }
+            if(!isset($result['code']) || $result['code']!=0 || !in_array((int)($result['status']??-1),[0,1],true)) return ['code'=>-2,'biz_no'=>$biz_no,'msg'=>'付款结果未确认，请查询原交易，禁止重新提交'];
+            self::finish($biz_no,(int)$result['status'],null,$result);
+            $result['biz_no']=$biz_no; $result['out_biz_no']=$out_biz_no; $result['cost_money']=$intent['cost'];
+            if(isset($result['wxpackage'])) $result['jumpurl']=$siteurl.'paypage/wxtrans.php?type=transfer&id='.$biz_no;
+            $result['msg']=$result['status']==1?'转账成功':'已提交，请查询原交易';
+            return $result;
+        } catch(\Throwable $e){ return ['code'=>-2,'biz_no'=>$biz_no,'msg'=>'本地资金操作未完成，请核对原交易，禁止重复付款']; }
+    }
 
-        $DB->beginTransaction();
-        $need_money = null;
-        if($uid > 0){
-            $userrow = $DB->getRow('SELECT * FROM pre_user WHERE uid=:uid FOR UPDATE', [':uid'=>$uid]);
-            if($userrow['settle']==0){
-                $DB->rollback();
-                return ['code'=>-1, 'msg'=>'您的商户出现异常，无法使用代付功能'];
+    public static function finish($biz_no,$status,$reason=null,$result=[]){
+        global $DB;
+        if(!in_array((int)$status,[0,1,2],true)) throw new \RuntimeException('状态不合法');
+        return Finance::transaction(function() use ($DB,$biz_no,$status,$reason,$result){
+            $o=Finance::row('SELECT * FROM pre_transfer WHERE biz_no=:n FOR UPDATE',[':n'=>$biz_no]);
+            if(!$o) return false;
+            if(in_array((int)$o['status'],[1,2],true)) {
+                if((int)$status!==(int)$o['status']) throw new \RuntimeException('终态冲突，需人工核对');
+                return true;
             }
-            if($conf['settle_type']==1){
-                $today=date("Y-m-d").' 00:00:00';
-                $order_today=$DB->getColumn("SELECT SUM(realmoney) from pre_order where uid={$uid} and tid<>2 and status=1 and endtime>='$today'");
-                if(!$order_today) $order_today = 0;
-                $enable_money=round($userrow['money']-$order_today,2);
-                if($enable_money<0)$enable_money=0;
-            }else{
-                $enable_money=$userrow['money'];
-            }
-            if(!$conf['transfer_rate'])$conf['transfer_rate'] = $conf['settle_rate'];
-            $need_money = round($money + $money*$conf['transfer_rate']/100,2);
-            if($need_money>$enable_money){
-                $DB->rollback();
-                return ['code'=>-1, 'msg'=>'需支付金额大于可转账余额'];
-            }
-        }
-        
-        if($channelid == -1){
-            $result = ['code'=>0, 'status'=>3, 'orderid'=>null, 'biz_no'=>$biz_no, 'out_biz_no'=>$out_biz_no];
-        }else{
-            $result = self::submit($type, $channel, $biz_no, $payee_account, $payee_real_name, $money, $title, $desc);
-            $result['biz_no'] = $biz_no;
-            $result['out_biz_no'] = $out_biz_no;
-        }
-
-        if($result['code']==0){
-            $paytime = $result['status'] == 1 ? 'NOW()' : null;
-            $data = ['biz_no'=>$biz_no, 'out_biz_no'=>$out_biz_no, 'uid'=>$uid, 'type'=>$type, 'channel'=>$channelid, 'account'=>$payee_account, 'username'=>$payee_real_name, 'money'=>$money, 'costmoney'=>$need_money??$money, 'addtime'=>'NOW()', 'paytime'=>$paytime, 'pay_order_no'=>$result['orderid'], 'status'=>$result['status'], 'desc'=>$title?$title:$desc];
-            if(isset($result['wxpackage'])) $data['ext'] = $result['wxpackage'];
-            $id = $DB->insert('transfer', $data);
-            if($need_money>0 && $id!==false){
-                changeUserMoney2($uid, $userrow['money'], $need_money, false, '代付', $biz_no);
-                $result['cost_money'] = $need_money;
-            }
-            if($result['status'] == 1){
-                $result['msg']='转账成功！转账单据号:'.$result['orderid'].' 支付时间:'.$result['paydate'];
-            }elseif($result['status'] == 3){
-                $result['msg']='提交成功！请等待管理员审核转账。';
-            }elseif(isset($result['wxpackage'])){
-                $jumpurl = $siteurl.'paypage/wxtrans.php?type=transfer&id='.$id;
-                $result['msg']='提交成功！请在微信打开 '.$jumpurl.' 确认收款。转账单据号:'.$result['orderid'].' 支付时间:'.$result['paydate'];
-                $result['jumpurl'] = $jumpurl;
-            }else{
-                $result['msg']='提交成功！转账处理中。转账单据号:'.$result['orderid'].' 支付时间:'.$result['paydate'];
-            }
-        }
-        $DB->commit();
-        return $result;
+            if((int)$o['status']===4 && (int)$status!==2) throw new \RuntimeException('未领取红包只能取消退回');
+            if(!in_array((int)$o['status'],[0,3,4,5,6],true)) throw new \RuntimeException('当前状态不能确认付款');
+            $data=['status'=>$status,'result'=>$reason??''];
+            if($status==1) $data['paytime']=$result['paydate']??'NOW()';
+            if(isset($result['orderid'])) $data['pay_order_no']=$result['orderid'];
+            if(isset($result['wxpackage'])) $data['ext']=$result['wxpackage'];
+            if($status==2 && $o['uid']>0) Finance::change($o['uid'],$o['costmoney'],true,'代付退回',$biz_no);
+            Finance::checked($DB->update('transfer',$data,['biz_no'=>$biz_no]));
+            return true;
+        });
     }
 
     //转账状态刷新
@@ -159,26 +162,15 @@ class Transfer
         $channel = \lib\Channel::get($order['channel'], $channelinfo);
         if(!$channel) return ['code'=>-1, 'msg'=>'支付通道不存在'];
 
-        $result = self::query($order['type'], $channel, $biz_no, $order['pay_order_no']);
+        try { $result = self::query($order['type'], $channel, $biz_no, $order['pay_order_no']); }
+        catch(\Throwable $e){return ['code'=>-2,'msg'=>'查询未确认，请核对原交易'];}
+        if(!is_array($result) || !isset($result['code']))return ['code'=>-2,'msg'=>'查询响应无效，请核对原交易'];
         if($result['code'] == 0){
-            if($result['status'] == 2){
-                if($order['status'] == 0 || $order['status'] == 3){
-                    $resCount = $DB->update('transfer', ['status'=>2, 'result'=>$result['errmsg']], ['biz_no' => $biz_no]);
-                    if($order['uid'] > 0 && $resCount > 0){
-                        changeUserMoney($order['uid'], $order['costmoney'], true, '代付退回', $biz_no);
-                    }
-                }
-                $result['msg'] = '转账失败：'.($result['errmsg']?$result['errmsg']:'原因未知');
-            }elseif($result['status'] == 1){
-                if($order['status'] == 0 || $order['status'] == 3){
-                    $paytime = $result['paydate'] ?? 'NOW()';
-                    $DB->update('transfer', ['status'=>1, 'paytime'=>$paytime, 'result'=>''], ['biz_no' => $biz_no]);
-                }
-                $result['msg'] = '转账成功！';
-            }else{
-                $result['msg'] = '转账处理中，请稍后查询结果。';
-            }
+            try { self::finish($biz_no,(int)$result['status'],$result['errmsg']??null,$result); }
+            catch(\Throwable $e){return ['code'=>-2,'msg'=>'本地确认失败或终态冲突，请核对原交易'];}
+            $result['msg']=$result['status']==1?'转账成功':($result['status']==2?'转账失败，余额已退回':'正在处理');
         }
+
         return $result;
     }
 
@@ -211,14 +203,20 @@ class Transfer
             'out_biz_no' => $order['biz_no'],
             'orderid' => $order['pay_order_no'],
         ];
-        $result = \lib\Plugin::call('transfer_cancel', $channel, $bizParam);
-        if($result['code'] == 0){
-            $resCount = $DB->update('transfer', ['status'=>2, 'result'=>'转账已撤销'], ['biz_no' => $biz_no]);
-            if($order['uid'] > 0 && $resCount > 0){
-                changeUserMoney($order['uid'], $order['costmoney'], true, '代付退回', $biz_no);
-            }
-            $result['msg'] = '转账已撤销';
+        try {
+            $claim=Finance::transaction(function() use($DB,$biz_no){
+                $o=Finance::row('SELECT * FROM pre_transfer WHERE biz_no=:n FOR UPDATE',[':n'=>$biz_no]);
+                if(!$o || !in_array((int)$o['status'],[0,5],true)) return false;
+                Finance::checked($DB->update('transfer',['status'=>6,'result'=>'撤销待核对，禁止重复撤销'],['biz_no'=>$biz_no]));return true;
+            });
+            if(!$claim)return ['code'=>-2,'msg'=>'撤销已提交或终态不允许，请查询原交易'];
+            $result = \lib\Plugin::call('transfer_cancel', $channel, $bizParam);
+        }catch(\Throwable $e){return ['code'=>-2,'msg'=>'撤销结果待核对，请查询原交易'];} 
+        if($result['code']==0){
+            try {self::finish($biz_no,2,'转账已撤销');}
+            catch(\Throwable $e){return ['code'=>-2,'msg'=>'撤销结果待核对'];}
         }
+
         return $result;
     }
 
@@ -255,27 +253,67 @@ class Transfer
     //转账回调处理
     public static function processNotify($biz_no, $status, $errmsg = null){
         global $DB;
-        $order = $DB->find('transfer', '*', ['biz_no' => $biz_no]);
-        if(!$order) {
-            $order = $DB->find('settle', '*', ['transfer_no' => $biz_no]);
-            if(!$order) return;
-            if($status == 2 && $order['transfer_status'] == 1){
-                $DB->update('settle', ['transfer_status'=>2, 'transfer_result'=>$errmsg, 'status'=>3, 'result'=>$errmsg], ['id' => $order['id']]);
-            }elseif($status == 1 && $order['transfer_status'] == 2){
-                $DB->update('settle', ['transfer_status'=>1, 'status'=>1, 'result'=>''], ['biz_no' => $biz_no]);
+        if(self::finish($biz_no,(int)$status,$errmsg)) return;
+        Finance::transaction(function() use ($DB,$biz_no,$status,$errmsg){
+            $o=Finance::row('SELECT * FROM pre_settle WHERE transfer_no=:n FOR UPDATE',[':n'=>$biz_no]);
+            if(!$o) return;
+            if(!in_array((int)$status,[1,2],true)) return;
+            if((int)$o['transfer_status']===2 && (int)$status!==2) throw new \RuntimeException('结算失败终态冲突');
+            if((int)$o['transfer_status']===1 && (int)$o['status']===1 && (int)$status!==1) throw new \RuntimeException('结算成功终态冲突');
+            if($o['transfer_status']==4) throw new \RuntimeException('结算已取消，回调需人工核对');
+            Finance::checked($DB->update('settle',['transfer_status'=>$status,'status'=>$status==1?1:3,'result'=>$errmsg??'','endtime'=>$status==1?'NOW()':null],['id'=>$o['id']]));
+        });
+    }
+
+    // Existing settlement row is the durable intent. Unknown results are queried, never resubmitted.
+    public static function settlePay($id,$type,$channel){
+        global $DB;
+        try {
+            if($DB->db->inTransaction()) throw new \RuntimeException('付款不得在未提交事务中调用');
+            $o=Finance::transaction(function() use ($DB,$id,$channel,$type){
+                $o=Finance::row('SELECT * FROM pre_settle WHERE id=:id FOR UPDATE',[':id'=>$id]);
+                if(!$o || $o['transfer_status']==4) throw new \RuntimeException('结算不存在或已取消');
+                if(!empty($o['transfer_no'])) return $o;
+                if((int)$o['status']===1) throw new \RuntimeException('已完成结算不能新发起付款');
+                if((int)$o['type']!==array_search($type,[1=>'alipay',2=>'wxpay',3=>'qqpay',4=>'bank'],true))throw new \RuntimeException('付款类型不一致');
+                $o['transfer_no']=date('YmdHis').str_pad((string)random_int(0,99999),5,'0',STR_PAD_LEFT);
+                $o['transfer_channel']=$channel['id'];
+                Finance::checked($DB->update('settle',['transfer_no'=>$o['transfer_no'],'transfer_channel'=>$channel['id'],'transfer_status'=>3,'status'=>3,'result'=>'付款待核对，禁止重复提交'],['id'=>$id]));
+                $o['new_intent']=true;
+                return $o;
+            });
+            if((int)$o['type']!==array_search($type,[1=>'alipay',2=>'wxpay',3=>'qqpay',4=>'bank'],true) || (int)$o['transfer_channel']!==(int)$channel['id']) throw new \RuntimeException('付款参数不一致');
+            $r=!empty($o['new_intent']) ? self::submit($type,$channel,$o['transfer_no'],$o['account'],$o['username'],$o['realmoney']) : self::query($type,$channel,$o['transfer_no'],$o['transfer_result']);
+            if(($r['code']??-1)!=0 || !in_array((int)($r['status']??-1),[0,1,2],true)) return ['code'=>-2,'msg'=>'付款待核对，请查询原交易'];
+            Finance::transaction(function() use($DB,$id,$o,$r){
+                $current=Finance::row('SELECT * FROM pre_settle WHERE id=:id FOR UPDATE',[':id'=>$id]);
+                if($current['transfer_no']!==$o['transfer_no'] || $current['transfer_status']==4) throw new \RuntimeException('结算状态冲突');
+                if((int)$current['transfer_status']===1 && (int)$current['status']===1 && (int)$r['status']!==1)throw new \RuntimeException('成功终态冲突');
+                if($current['transfer_status']==2 && (int)$r['status']!==2) throw new \RuntimeException('失败终态冲突，请人工核对');
+                $data=['transfer_status'=>$r['status']==0?3:($r['status']==2?2:1),'status'=>$r['status']==1?1:3,'endtime'=>$r['status']==1?'NOW()':null,'transfer_result'=>$r['orderid']??$current['transfer_result'],'transfer_date'=>$r['paydate']??'NOW()','result'=>$r['errmsg']??''];
+                if(isset($r['wxpackage'])) $data['transfer_ext']=$r['wxpackage'];
+                Finance::checked($DB->update('settle',$data,['id'=>$id]));
+            });
+            $r['biz_no']=$o['transfer_no']; if((int)$r['status']===0){$r['code']=-2;$r['msg']='已提交，尚未到账，请查询原交易';} return $r;
+        } catch(\Throwable $e){return ['code'=>-2,'msg'=>'付款或本地确认未完成，请核对原交易，禁止重复提交'];}
+    }
+
+    public static function settleStatus($id,$status){
+        global $DB;
+        return Finance::transaction(function() use($DB,$id,$status){
+            $o=Finance::row('SELECT * FROM pre_settle WHERE id=:id FOR UPDATE',[':id'=>$id]);
+            if(!$o) throw new \RuntimeException('结算不存在');
+            if($o['transfer_status']==4) {if($status==4)return true;throw new \RuntimeException('已取消结算不可恢复');}
+            if($status==4){
+                if($o['status']==1 || $o['status']==2 || (!empty($o['transfer_no']) && $o['transfer_status']!=2)) throw new \RuntimeException('已付款/批次/待核对结算不可退款');
+                Finance::change($o['uid'],$o['money'],true,'结算失败退回','settle:'.$id);
+                Finance::checked($DB->update('settle',['status'=>3,'transfer_status'=>4,'result'=>'已取消并退回余额'],['id'=>$id]));
+            }else{
+                if(!in_array($status,[0,1,2,3],true) || !empty($o['transfer_no']) || $o['status']==1) throw new \RuntimeException('此结算需通过付款查询确认');
+                Finance::checked($DB->update('settle',['status'=>$status,'endtime'=>$status==1?'NOW()':null],['id'=>$id]));
             }
-            return;
-        }
-        if($status == 2 && $order['status'] == 0){ //转账失败
-            $data = ['status'=>2];
-            if($errmsg) $data['result'] = $errmsg;
-            $resCount = $DB->update('transfer', $data, ['biz_no' => $biz_no]);
-            if($order['uid'] > 0 && $resCount > 0){
-                changeUserMoney($order['uid'], $order['costmoney'], true, '代付退回', $biz_no);
-            }
-        }elseif($status == 1 && $order['status'] == 0){ //转账成功
-            $DB->update('transfer', ['status'=>1, 'paytime'=>'NOW()', 'result'=>''], ['biz_no' => $biz_no]);
-        }
+            return true;
+        });
     }
 
     public static function red_add($uid, $type, $out_biz_no, $money, $desc = null, $channelid = null){
@@ -301,10 +339,14 @@ class Transfer
         $channel = \lib\Channel::get($channelid, $userrow['channelinfo']);
         if(!$channel) return ['code'=>-1, 'msg'=>'当前支付通道信息不存在'];
 
+        try {
+        if($DB->db->inTransaction()) throw new \RuntimeException('红包创建必须独立事务');
+        if(Finance::cents($money)<=0) throw new \RuntimeException('金额必须大于0');
+        Finance::checked($DB->beginTransaction());
+        Finance::checked($DB->query('SELECT uid FROM pre_user ORDER BY uid LIMIT 1 FOR UPDATE'));
         $trans = $DB->find('transfer', '*', ['out_biz_no' => $out_biz_no, 'uid' => $uid]);
-        if($trans) return ['code'=>-1, 'msg'=>'该交易号已存在，请更换交易号'];
+        if($trans){$DB->rollBack();return ['code'=>-1,'msg'=>'该交易号已存在，请使用原红包'];}
 
-        $DB->beginTransaction();
         $need_money = null;
         if($uid > 0){
             $userrow = $DB->getRow('SELECT * FROM pre_user WHERE uid=:uid FOR UPDATE', [':uid'=>$uid]);
@@ -333,15 +375,16 @@ class Transfer
         $result = ['code'=>0, 'status'=>4, 'biz_no'=>$biz_no, 'out_biz_no'=>$out_biz_no, 'jumpurl'=>$jumpurl];
 
         $data = ['biz_no'=>$biz_no, 'out_biz_no'=>$out_biz_no, 'uid'=>$uid, 'type'=>$type, 'channel'=>$channelid, 'account'=>'', 'username'=>'', 'money'=>$money, 'costmoney'=>$need_money??$money, 'addtime'=>'NOW()', 'status'=>$result['status'], 'desc'=>$desc];
-        $id = $DB->insert('transfer', $data);
+        $id = Finance::checked($DB->insert('transfer', $data));
         if($need_money>0 && $id!==false){
-            changeUserMoney2($uid, $userrow['money'], $need_money, false, '代付', $biz_no);
+            Finance::change($uid, number_format($need_money,2,'.',''), false, '代付', $biz_no, true);
             $result['cost_money'] = $need_money;
         }
         $typename = $type == 'alipay' ? '支付宝' : ($type == 'wxpay' ? '微信' : '未知');
         $result['msg']='红包创建成功！请在'.$typename.'打开 '.$jumpurl.' 确认收款。';
-        $DB->commit();
+        Finance::checked($DB->commit());
         return $result;
+        }catch(\Throwable $e){if($DB->db->inTransaction())$DB->rollBack();return ['code'=>-2,'msg'=>'红包创建未完成'];}
     }
 
     public static function red_receive($biz_no, $openid){
@@ -355,8 +398,10 @@ class Transfer
             $channel = \lib\Channel::get($trans['channel'], $userrow['channelinfo']);
             if(!$channel) return ['code'=>-1, 'msg'=>'当前支付通道信息不存在'];
 
+            Finance::checked($DB->update('transfer',['status'=>5,'account'=>$openid,'result'=>'领取付款待核对'],['biz_no'=>$biz_no,'status'=>4]));
+            Finance::checked($DB->commit());
             $result = self::submit($trans['type'], $channel, $biz_no, $openid, '', $trans['money'], $trans['desc'], $trans['type']=='alipay'?null:$trans['desc']);
-            if($result['code']==0){
+            if(($result['code']??-1)==0 && in_array((int)($result['status']??-1),[0,1],true)){
                 $data = ['account'=>$openid, 'status'=>$result['status'], 'paytime'=>'NOW()', 'pay_order_no'=>$result['orderid'], 'result'=>''];
                 if(isset($result['wxpackage'])){
                     $data['ext'] = $result['wxpackage'];
@@ -367,19 +412,19 @@ class Transfer
                         'package' => $result['wxpackage'],
                     ];
                 }
-                $DB->update('transfer', $data, ['biz_no' => $biz_no]);
+                self::finish($biz_no,(int)$result['status'],null,$result);
             }
             return $result;
         };
 
-        $DB->beginTransaction();
+        try {
+        if($DB->db->inTransaction()) throw new \RuntimeException('领取必须独立事务');
+        Finance::checked($DB->beginTransaction());
         $result = $func();
-        if($result['code'] == 0){
-            $DB->commit();
-        }else{
-            $DB->rollback();
-        }
+        if($DB->db->inTransaction()) $DB->rollback();
+        if(($result['code']??-1)!=0 || !in_array((int)($result['status']??-1),[0,1],true)) $result=['code'=>-2,'msg'=>'领取结果待核对，请查询原交易'];
         return $result;
+        }catch(\Throwable $e){if($DB->db->inTransaction())$DB->rollBack();return ['code'=>-2,'msg'=>'领取结果待核对，请查询原交易'];}
     }
 
     public static function red_url($biz_no){

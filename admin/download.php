@@ -28,7 +28,7 @@ function get_safe_token_param($key, $required=false){
 }
 function csv_text($value){
 	$value = str_replace(["\r", "\n"], ' ', (string)$value);
-	if(preg_match('/^[=+\-@]/', $value)) $value = "'".$value;
+	if(preg_match('/^[\x00-\x20]*[=+\-@]/', $value)) $value = "'".$value;
 	$value = str_replace('"', '""', $value);
 	return '"'.$value.'"';
 }
@@ -58,15 +58,13 @@ function display_status($status){
 	}
 }
 
-function text_encoding($text){
-	return csv_text($text);
-}
+
 
 switch($act){
 case 'settle':
 $type = get_enum_param('type', ['common','mybank','alipay','wxpay'], 'common');
 $batch = get_safe_token_param('batch', true);
-$remark = text_encoding($conf['transfer_desc']);
+$remark = $conf['transfer_desc'];
 
 if($type == 'mybank'){
 	$data="收款方名称,收款方账号,收款方开户行名称,收款行联行号,金额,附言/用途\r\n";
@@ -110,12 +108,12 @@ if($type == 'mybank'){
 	}
 
 	$data="微信支付批量转账到零钱模版（勿删）\r\n";
-	$data.="商家批次单号（必填）,".$batch."\r\n";
-	$data.="批次名称（必填）,批量转账".$batch."\r\n";
-	$data.="转账appid（必填）,".$wxinfo['appid']."\r\n";
-	$data.="转账总金额（必填，单位：元）,".$allmoney."\r\n";
-	$data.="转账总笔数（必填）,".$i."\r\n";
-	$data.="批次备注（必填）,批量转账".$batch."\r\n";
+	$data.="商家批次单号（必填）,".csv_text($batch)."\r\n";
+	$data.="批次名称（必填）,".csv_text('批量转账'.$batch)."\r\n";
+	$data.="转账appid（必填）,".csv_text($wxinfo['appid'])."\r\n";
+	$data.="转账总金额（必填，单位：元）,".csv_text($allmoney)."\r\n";
+	$data.="转账总笔数（必填）,".csv_text($i)."\r\n";
+	$data.="批次备注（必填）,".csv_text('批量转账'.$batch)."\r\n";
 	$data.=",\r\n";
 	$data.="转账明细（勿删）\r\n";
 	$data.=$table;
@@ -159,11 +157,11 @@ if($method == 'type'){
 	$paytype = [];
 	$rs = $DB->getAll("SELECT id,name,showname FROM pre_type WHERE status=1");
 	foreach($rs as $row){
-		$paytype[$row['id']] = text_encoding($row['showname']);
+		$paytype[$row['id']] = $row['showname'];
 		if($type == 4){
-			$columns['type_'.$row['name']] = text_encoding($row['showname']);
+			$columns['type_'.$row['name']] = $row['showname'];
 		}else{
-			$columns['type_'.$row['id']] = text_encoding($row['showname']);
+			$columns['type_'.$row['id']] = $row['showname'];
 		}
 	}
 	unset($rs);
@@ -171,7 +169,7 @@ if($method == 'type'){
 	$channel = [];
 	$rs = $DB->getAll("SELECT id,name FROM pre_channel WHERE status=1");
 	foreach($rs as $row){
-		$channel[$row['id']] = text_encoding($row['name']);
+		$channel[$row['id']] = $row['name'];
 	}
 	unset($rs);
 }
@@ -191,7 +189,7 @@ if($type == 4){
 			$ukey = 'channel_'.$row['channel'];
 			if(!array_key_exists($ukey, $data[$row['uid']])) $data[$row['uid']][$ukey] = $money;
 			else $data[$row['uid']][$ukey] += $money;
-			if(!in_array($ukey, $columns)) $columns[$ukey] = $channel[$row['channel']];
+			if(!array_key_exists($ukey, $columns)) $columns[$ukey] = $channel[$row['channel']];
 		}
 	}
 }else{
@@ -217,7 +215,7 @@ if($type == 4){
 			$ukey = 'channel_'.$row['channel'];
 			if(!array_key_exists($ukey, $data[$row['uid']])) $data[$row['uid']][$ukey] = $money;
 			else $data[$row['uid']][$ukey] += $money;
-			if(!in_array($ukey, $columns)) $columns[$ukey] = $channel[$row['channel']];
+			if(!array_key_exists($ukey, $columns)) $columns[$ukey] = $channel[$row['channel']];
 		}
 	}
 }
@@ -225,15 +223,15 @@ ksort($data);
 
 $file='';
 foreach($columns as $column){
-	$file.=$column.',';
+	$file.=csv_text($column).',';
 }
 $file=substr($file,0,-1)."\r\n";
 foreach($data as $row){
 	foreach($columns as $key=>$column){
 		if(!array_key_exists($key, $row))
-			$file.='0,';
+			$file.=csv_text(0).',';
 		else
-			$file.=$row[$key].',';
+			$file.=csv_text($row[$key]).',';
 	}
 	$file=substr($file,0,-1)."\r\n";
 }
@@ -259,10 +257,11 @@ $dstatus = intval($_GET['dstatus']);
 $paytype = [];
 $rs = $DB->getAll("SELECT * FROM pre_type");
 foreach($rs as $row){
-	$paytype[$row['id']] = text_encoding($row['showname']);
+	$paytype[$row['id']] = $row['showname'];
 }
 unset($rs);
 
+$bindings = [];
 $sql=" 1=1";
 if(!empty($uid)) {
 	$sql.=" AND A.`uid`='$uid'";
@@ -291,7 +290,7 @@ while($row = $rs->fetch()){
 	if($row['status']==2){
 		$row['refundtime'] = $DB->findColumn('refundorder', 'addtime', ['trade_no'=>$row['trade_no']], 'refund_no DESC');
 	}
-	$file.=csv_text($row['trade_no']).','.csv_text($row['out_trade_no']).','.csv_text($row['api_trade_no']).','.csv_text($row['uid']).','.csv_text($row['domain']).','.csv_text($row['name']).','.csv_text($row['money']).','.csv_text($row['realmoney']).','.csv_text($row['getmoney']).','.csv_text($paytype[$row['type']]).','.csv_text($row['channel']).','.csv_text($row['plugin']).','.csv_text($row['buyer']).','.csv_text($row['ip']).','.csv_text($row['addtime']).','.csv_text($row['endtime']).','.csv_text(display_status($row['status'])).','.csv_text($row['status']==2?$row['refundmoney']:'').','.csv_text($row['refundtime'])."\r\n";
+	$file.=csv_text($row['trade_no']).','.csv_text($row['out_trade_no']).','.csv_text($row['api_trade_no']).','.csv_text($row['uid']).','.csv_text($row['domain']).','.csv_text($row['name']).','.csv_text($row['money']).','.csv_text($row['realmoney']).','.csv_text($row['getmoney']).','.csv_text($paytype[$row['type']]).','.csv_text($row['channel']).','.csv_text($row['plugin']).','.csv_text($row['buyer']).','.csv_text($row['ip']).','.csv_text($row['addtime']).','.csv_text($row['endtime']).','.csv_text(display_status($row['status'])).','.csv_text($row['status']==2?$row['refundmoney']:'').','.csv_text($row['refundtime'] ?? '')."\r\n";
 }
 
 $file = hex2bin('efbbbf').$file;
@@ -313,13 +312,14 @@ $dstatus = intval($_GET['dstatus']);
 $group = [];
 $rs = $DB->getAll("SELECT * FROM pre_group");
 foreach($rs as $row){
-	$group[$row['gid']] = text_encoding($row['name']);
+	$group[$row['gid']] = $row['name'];
 }
 unset($rs);
 $status_text = [0=>'封禁', 1=>'正常', 2=>'未审核'];
 $permit_text = [0=>'关闭', 1=>'开启'];
 $cert_text = [0=>'未认证', 1=>'已认证'];
 
+$bindings = [];
 $sql=" 1=1";
 if(!empty($gid)) {
 	$sql.=" AND `gid`='$gid'";
@@ -360,6 +360,7 @@ $endtime = get_date_param('endtime');
 $uid = intval($_GET['uid']);
 $type = get_safe_token_param('type');
 
+$bindings = [];
 $sql=" 1=1";
 if(!empty($uid)) {
 	$sql.=" AND `uid`='$uid'";
@@ -380,7 +381,7 @@ $file="ID,商户号,操作类型,变更类型,变更金额,变更前金额,变�
 
 $rs = $DB->query("SELECT * FROM pre_record WHERE{$sql} order by id desc limit 100000");
 while($row = $rs->fetch()){
-	$file .= csv_text($row['id']).','.csv_text($row['uid']).','.csv_text(text_encoding($row['type'])).','.csv_text($row['action']==2?'-':'+').','.csv_text($row['money']).','.csv_text($row['oldmoney']).','.csv_text($row['newmoney']).','.csv_text($row['date']).','.csv_text($row['trade_no'])."\r\n";
+	$file .= csv_text($row['id']).','.csv_text($row['uid']).','.csv_text($row['type']).','.csv_text($row['action']==2?'-':'+').','.csv_text($row['money']).','.csv_text($row['oldmoney']).','.csv_text($row['newmoney']).','.csv_text($row['date']).','.csv_text($row['trade_no'])."\r\n";
 }
 
 $file = hex2bin('efbbbf').$file;
@@ -394,7 +395,7 @@ echo $file;
 break;
 
 case 'transfer':
-$remark = text_encoding($conf['transfer_desc']);
+$remark = $conf['transfer_desc'];
 $starttime = get_date_param('starttime');
 $endtime = get_date_param('endtime');
 $uid = isset($_GET['uid']) ? intval($_GET['uid']) : 0;
@@ -402,6 +403,7 @@ $dstatus = isset($_GET['dstatus']) ? intval($_GET['dstatus']) : '';
 $type = get_enum_param('type', ['alipay','wxpay','qqpay','bank'], '');
 $sheet = get_enum_param('sheet', ['common','mybank','alipay','wxpay'], 'common');
 
+$bindings = [];
 $sql=" 1=1";
 if(!empty($uid)) {
 	$sql.=" AND `uid`='$uid'";
@@ -435,8 +437,8 @@ if($sheet == 'mybank'){
 	while($row = $rs->fetch())
 	{
 		$i++;
-		$desc = $row['desc'] ? text_encoding($row['desc']) : $remark;
-		$data.=csv_text($row['username']).','.csv_text($row['account']).','.csv_text($row['type']=='1'?'支付宝':'').','.csv_text('').','.csv_text($row['money']).','.csv_text($desc)."\r\n";
+		$desc = $row['desc'] ? $row['desc'] : $remark;
+		$data.=csv_text($row['username']).','.csv_text($row['account']).','.csv_text($row['type']=='alipay'?'支付宝':'').','.csv_text('').','.csv_text($row['money']).','.csv_text($desc)."\r\n";
 	}
 
 }elseif($sheet == 'alipay'){
@@ -447,7 +449,7 @@ if($sheet == 'mybank'){
 	while($row = $rs->fetch())
 	{
 		$i++;
-		$desc = $row['desc'] ? text_encoding($row['desc']) : $remark;
+		$desc = $row['desc'] ? $row['desc'] : $remark;
 		$data.=csv_text($i).','.csv_text($row['account']).','.csv_text($row['username']).','.csv_text($row['money']).','.csv_text($desc)."\r\n";
 	}
 
@@ -465,18 +467,18 @@ if($sheet == 'mybank'){
 	while($row = $rs->fetch())
 	{
 		$i++;
-		$desc = $row['desc'] ? text_encoding($row['desc']) : $remark;
+		$desc = $row['desc'] ? $row['desc'] : $remark;
 		$table.=csv_text($batch.$i).','.csv_text($row['account']).','.csv_text($row['username']).','.csv_text('').','.csv_text($row['money']).','.csv_text($desc)."\r\n";
 		$allmoney+=$row['money'];
 	}
 
 	$data="微信支付批量转账到零钱模版（勿删）\r\n";
-	$data.="商家批次单号（必填）,".$batch."\r\n";
-	$data.="批次名称（必填）,批量转账".$batch."\r\n";
-	$data.="转账appid（必填）,".$wxinfo['appid']."\r\n";
-	$data.="转账总金额（必填，单位：元）,".$allmoney."\r\n";
-	$data.="转账总笔数（必填）,".$i."\r\n";
-	$data.="批次备注（必填）,批量转账".$batch."\r\n";
+	$data.="商家批次单号（必填）,".csv_text($batch)."\r\n";
+	$data.="批次名称（必填）,".csv_text('批量转账'.$batch)."\r\n";
+	$data.="转账appid（必填）,".csv_text($wxinfo['appid'])."\r\n";
+	$data.="转账总金额（必填，单位：元）,".csv_text($allmoney)."\r\n";
+	$data.="转账总笔数（必填）,".csv_text($i)."\r\n";
+	$data.="批次备注（必填）,".csv_text('批量转账'.$batch)."\r\n";
 	$data.=",\r\n";
 	$data.="转账明细（勿删）\r\n";
 	$data.=$table;
@@ -489,7 +491,7 @@ if($sheet == 'mybank'){
 		while($row = $rs->fetch())
 		{
 			$i++;
-			$desc = $row['desc'] ? text_encoding($row['desc']) : $remark;
+			$desc = $row['desc'] ? $row['desc'] : $remark;
 			$data.=csv_text($i).','.csv_text($row['account']).','.csv_text($row['username']).','.csv_text($row['money']).','.csv_text($desc)."\r\n";
 		}
 	}else{
@@ -499,7 +501,7 @@ if($sheet == 'mybank'){
 		while($row = $rs->fetch())
 		{
 			$i++;
-			$desc = $row['desc'] ? text_encoding($row['desc']) : $remark;
+			$desc = $row['desc'] ? $row['desc'] : $remark;
 			$data.=csv_text($i).','.csv_text($type_name[$row['type']]).','.csv_text($row['account']).','.csv_text($row['username']).','.csv_text($row['money']).','.csv_text($row['addtime']).','.csv_text($desc).','.csv_text($status_arr[$row['status']]).','.csv_text($row['result'])."\r\n";
 		}
 	}
@@ -527,6 +529,7 @@ foreach($rs as $row){
 }
 unset($rs);
 
+$bindings = [];
 $sql=" 1=1";
 if(isset($_GET['uid']) && !empty($_GET['uid'])) {
 	$uid = intval($_GET['uid']);
@@ -555,17 +558,19 @@ if(isset($_GET['value']) && $_GET['value'] !== '') {
 	$allowed_columns = ['title','content','trade_no','uid','channel','paytype','status'];
 	$column = isset($_GET['column']) ? trim($_GET['column']) : '';
 	if(!in_array($column, $allowed_columns, true)) exit('param error');
-	$value = daddslashes(trim($_GET['value']));
+	$value = trim((string)$_GET['value']);
 	if($column=='title' || $column=='content'){
-		$sql.=" AND A.`{$column}` like '%{$value}%'";
+		$sql.=" AND A.`{$column}` like :value";
+        $bindings[':value'] = '%'.$value.'%';
 	}else{
-		$sql.=" AND A.`{$column}`='{$value}'";
+		$sql.=" AND A.`{$column}`=:value";
+        $bindings[':value'] = $value;
 	}
 }
 
 $file="ID,商户号,支付方式,通道ID,关联订单号,商品名称,订单金额,问题类型,投诉原因,投诉详情,创建时间,最后更新时间,状态\r\n";
 
-$rs = $DB->query("SELECT A.*,B.money,B.name ordername,B.status orderstatus FROM pre_complain A LEFT JOIN pre_order B ON A.trade_no=B.trade_no WHERE{$sql} order by A.addtime desc limit 100000");
+$rs = $DB->query("SELECT A.*,B.money,B.name ordername,B.status orderstatus FROM pre_complain A LEFT JOIN pre_order B ON A.trade_no=B.trade_no WHERE{$sql} order by A.addtime desc limit 100000", $bindings);
 while($row = $rs->fetch()){
 	$file.=csv_text($row['id']).','.csv_text($row['uid']).','.csv_text($paytype[$row['paytype']]).','.csv_text($row['channel']).','.csv_text($row['trade_no']).','.csv_text($row['ordername']).','.csv_text($row['money']).','.csv_text($row['type']).','.csv_text($row['title']).','.csv_text($row['content']).','.csv_text($row['addtime']).','.csv_text($row['edittime']).','.csv_text(['0'=>'待处理','1'=>'处理中','2'=>'处理完成'][$row['status']])."\r\n";
 }
@@ -581,20 +586,11 @@ echo $file;
 break;
 
 case 'wximg':
-	if(!checkRefererHost())exit();
-	$channelid = intval($_GET['channel']);
-	$subchannelid = intval($_GET['subchannel']);
-	$media_id = get_safe_token_param('mediaid', true);
-	$channel = $subchannelid ? \lib\Channel::getSub($subchannelid) : \lib\Channel::get($channelid);
-	$model = \lib\Complain\CommUtil::getModel($channel);
-	$image = $model->getImage($media_id);
-	if($image !== false){
-		$seconds_to_cache = 3600*24*7;
-		header("Cache-Control: max-age=$seconds_to_cache");
-		header("Content-Type: image/jpeg");
-		echo $image;
-	}
-break;
+    http_response_code(503);
+    header('Content-Type: text/plain; charset=UTF-8');
+    header('Cache-Control: private, no-store');
+    exit('投诉图片下载暂不可用：缺少已审核的图片模型及媒体归属校验，请联系管理员');
+
 
 case 'proxyapi':
 	if(!checkRefererHost())exit();

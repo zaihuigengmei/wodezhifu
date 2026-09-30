@@ -21,7 +21,7 @@ if(!defined('IN_CRONLITE'))exit();
     </div>
     <div class="weui-msg__text-area">
         <h2 class="weui-msg__title">防诈骗提醒</h2>
-        <p class="weui-msg__desc">您当前支付的商品为 <span style="font-weight:600;color:orange"><?php echo $order['name']?></span> ，请勿用他人发过来的二维码或链接进行支付，以防资金损失！</p>
+        <p class="weui-msg__desc">您当前支付的商品为 <span style="font-weight:600;color:orange"><?php echo htmlspecialchars((string)($order['name']), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8')?></span> ，请勿用他人发过来的二维码或链接进行支付，以防资金损失！</p>
     </div>
     <div class="weui-msg__opr-area">
         <p class="weui-btn-area">
@@ -34,7 +34,7 @@ if(!defined('IN_CRONLITE'))exit();
         </p>
     </div>
     <div class="weui-msg__extra-area">
-        <div class="weui-footer"><p class="weui-footer__links"></p><p class="weui-footer__text">Copyright © <?php echo date("Y")?> <?php echo $conf['sitename']?></p></div>
+        <div class="weui-footer"><p class="weui-footer__links"></p><p class="weui-footer__text">Copyright © <?php echo date("Y")?> <?php echo htmlspecialchars((string)($conf['sitename']), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8')?></p></div>
     </div>
 </div>
 </div>

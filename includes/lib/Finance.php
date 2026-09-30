@@ -50,6 +50,27 @@ class Finance
         }
     }
 
+    /** Deposit ledger uses oldmoney/newmoney for deposit, never the spendable balance. */
+    public static function deposit($uid, $money, $trade){
+        global $DB;
+        $cents = self::cents($money);
+        if ($cents <= 0 || !is_scalar($uid) || !preg_match('/^[1-9][0-9]*$/D', (string)$uid) || !$trade) throw new \RuntimeException('保证金充值参数错误');
+        return self::transaction(function() use ($DB, $uid, $cents, $trade){
+            $user = self::row('SELECT deposit FROM pre_user WHERE uid=:uid FOR UPDATE', [':uid'=>$uid]);
+            if (!$user) throw new \RuntimeException('保证金账户不存在');
+            $existing = self::row("SELECT money FROM pre_record WHERE uid=:uid AND type='保证金充值' AND trade_no=:trade LIMIT 1 FOR UPDATE", [':uid'=>$uid, ':trade'=>$trade]);
+            if ($existing) {
+                if (self::cents($existing['money']) !== $cents) throw new \RuntimeException('保证金充值重复金额不一致');
+                return true;
+            }
+            $old = self::cents($user['deposit'] ?? '0.00', true);
+            $new = $old + $cents;
+            if (self::checked($DB->update('user', ['deposit'=>self::amount($new)], ['uid'=>$uid])) !== 1) throw new \RuntimeException('保证金账户更新失败');
+            self::checked($DB->insert('record', ['uid'=>$uid, 'action'=>1, 'money'=>self::amount($cents), 'oldmoney'=>self::amount($old), 'newmoney'=>self::amount($new), 'type'=>'保证金充值', 'trade_no'=>$trade, 'date'=>'NOW()']));
+            return true;
+        });
+    }
+
     public static function change($uid, $money, $add = true, $type = null, $orderid = null, $requireFunds = false){
         global $DB;
         $cents = self::cents($money);

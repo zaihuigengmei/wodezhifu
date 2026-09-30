@@ -333,12 +333,13 @@ case 'fillorder': //手动补单
 	if(!$row)
 		exit('{"code":-1,"msg":"当前订单不存在！"}');
 	if($row['status']>0)exit('{"code":-1,"msg":"当前订单不是未完成状态！"}');
-	if($DB->exec("update `pre_order` set `status` ='1' where `trade_no`=:b37", [':b37'=>"$trade_no"])){
-		$DB->exec("update `pre_order` set `endtime` =:b38,`date` =NOW() where `trade_no`=:b39", [':b38'=>"$date", ':b39'=>"$trade_no"]);
-		$channel=\lib\Channel::get($row['channel']);
-		processOrder($row);
-	}
-	exit('{"code":0,"msg":"补单成功"}');
+	try {
+        \lib\Payment::processOrder(true, $row, $row['api_trade_no'] ?: null, $row['buyer'] ?? null, null, null, $date);
+        $fresh = \lib\Finance::row('SELECT status FROM pre_order WHERE trade_no=:n', [':n'=>$trade_no]);
+        if (!$fresh || (int)$fresh['status']!==1) throw new \RuntimeException('本地入账未确认');
+        exit(json_encode(['code'=>0,'msg'=>'补单成功']));
+    } catch (\Throwable $e) { exit(json_encode(['code'=>-2,'msg'=>'补单未完成，请核对本地订单；未确认成功'])); }
+
 break;
 case 'alipaydSettle': //支付宝直付通确认结算
 	$trade_no=trim($_POST['trade_no']);
@@ -351,20 +352,32 @@ case 'alipaydSettle': //支付宝直付通确认结算
 	if(!$channel){
 		exit('{"code":-1,"msg":"当前支付通道信息不存在"}');
 	}
-	try{
-		if($channel['plugin'] == 'alipayd'){
-			\lib\Payment::alipaydSettle($channel, $row);
-		}elseif($channel['plugin'] == 'wxpaynp'){
-			\lib\Payment::wxpaynpSettle($channel, $row);
-		}else{
-			exit('{"code":-1,"msg":"支付插件不支持该操作"}');
-		}
-		$DB->exec("update `pre_order` set `settle`=2 where `trade_no`=:b41", [':b41'=>"$trade_no"]);
-		exit('{"code":0,"msg":"结算成功！"}');
-	}catch(Exception $e){
-		$DB->exec("update `pre_order` set `settle`=3 where `trade_no`=:b42", [':b42'=>"$trade_no"]);
-		exit('{"code":-1,"msg":"结算失败,'.$e->getMessage().'"}');
-	}
+    $lock=substr('epay_settle_'.hash('sha256',$trade_no),0,64);
+    $reply=['code'=>-2,'msg'=>'结算未确认，请核对原交易，禁止重复提交'];
+    $got=false;
+    try {
+        if($DB->db->inTransaction()) throw new \RuntimeException('结算不得嵌套事务');
+        $got=(int)\lib\Finance::checked($DB->query('SELECT GET_LOCK(:name,0)',[':name'=>$lock]))->fetchColumn()===1;
+        if(!$got) throw new \RuntimeException('结算处理中');
+        $row=\lib\Finance::row('SELECT * FROM pre_order WHERE trade_no=:n',[':n'=>$trade_no]);
+        if((int)$row['status']!==1) throw new \RuntimeException('订单未支付');
+        if((int)$row['settle']===2) $reply=['code'=>0,'msg'=>'已结算'];
+        else {
+            if((int)$row['settle']!==1) throw new \RuntimeException('非待结算状态，仅可核对');
+            $channel=$row['subchannel']>0 ? \lib\Channel::getSub($row['subchannel']) : \lib\Channel::get($row['channel'],$DB->findColumn('user','channelinfo',['uid'=>$row['uid']]));
+            if(!$channel || !in_array($channel['plugin'],['alipayd','wxpaynp'],true)) throw new \RuntimeException('通道不支持');
+            if(\lib\Finance::checked($DB->update('order',['settle'=>4],['trade_no'=>$trade_no,'status'=>1,'settle'=>1]))!==1) throw new \RuntimeException('认领失败');
+            $row['_settlement_claim']=true;
+            $r=$channel['plugin']==='alipayd' ? \lib\Payment::alipaydSettle($channel,$row) : \lib\Payment::wxpaynpSettle($channel,$row);
+            if($r===false || $r===null) throw new \RuntimeException('上游未确认');
+            if(\lib\Finance::checked($DB->update('order',['settle'=>2],['trade_no'=>$trade_no,'status'=>1,'settle'=>4]))!==1) throw new \RuntimeException('终态未保存');
+            $reply=['code'=>0,'msg'=>'结算成功'];
+        }
+    } catch(\Throwable $e) {} finally {
+        if($got) { try { \lib\Finance::checked($DB->query('SELECT RELEASE_LOCK(:name)',[':name'=>$lock])); } catch(\Throwable $e) { $reply=['code'=>-2,'msg'=>'结算锁释放未确认，请核对原交易']; } }
+    }
+    exit(json_encode($reply));
+
 break;
 case 'alipayPreAuthPay': //支付宝授权资金支付
 	$trade_no=trim($_POST['trade_no']);

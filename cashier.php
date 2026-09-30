@@ -7,7 +7,7 @@ require './includes/common.php';
 
 $other=isset($_GET['other'])?true:false;
 $trade_no=daddslashes($_GET['trade_no']);
-$sitename=base64_decode(daddslashes($_GET['sitename']));
+$sitename=(is_string($_GET['sitename'] ?? null) ? base64_decode($_GET['sitename'], true) : '');
 $row=$DB->getRow("SELECT * FROM pre_order WHERE trade_no='{$trade_no}' limit 1");
 if(!$row)sysmsg('该订单号不存在，请返回来源地重新发起请求！');
 if($row['status']==1)sysmsg('该订单已完成支付，请勿重复支付');
@@ -28,7 +28,7 @@ if(checkwechat()){
 <!DOCTYPE html>
 <html><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
 <meta content="width=device-width, initial-scale=1, maximum-scale=1.0, user-scalable=0" name="viewport">
-<title>收银台 | <?php echo $sitename?$sitename:$conf['sitename']?> </title>
+<title>收银台 | <?php echo htmlspecialchars((string)($sitename?$sitename:$conf['sitename']), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8')?> </title>
 <link href="/assets/css/reset.css" rel="stylesheet" type="text/css">
 <link href="/assets/css/main12.css?v=2" rel="stylesheet" type="text/css">
 </head>
@@ -45,7 +45,7 @@ if(checkwechat()){
 
     </div>
 </div>
-<input type="hidden" name="trade_no" value="<?php echo $trade_no?>"/>
+<input type="hidden" name="trade_no" value="<?php echo htmlspecialchars((string)($trade_no), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8')?>"/>
 <!--订单金额-->
 <?php if($other){?>
 <div class="w1080 order-amount12" style="height: auto;">
@@ -61,15 +61,15 @@ if(checkwechat()){
     <ul class="order-amount12-left">
         <li>
             <span>商品名称：</span>
-            <span><?php echo $row['name']?></span>
+            <span><?php echo htmlspecialchars((string)($row['name']), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8')?></span>
         </li>
         <li>
             <span>订单号：</span>
-            <span><?php echo $trade_no?></span>
+            <span><?php echo htmlspecialchars((string)($trade_no), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8')?></span>
         </li>
 		<li>
             <span>创建时间：</span>
-            <span><?php echo $row['addtime']?></span>
+            <span><?php echo htmlspecialchars((string)($row['addtime']), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8')?></span>
         </li>
     </ul>
     <div class="order-amount12-right">
@@ -85,9 +85,9 @@ if(checkwechat()){
         <h2>支付方式</h2>
         <ul class="types">
 		<?php foreach($paytype as $rows){?>
-          <li class="pay_li" value="<?php echo $rows['id']?>">
-             <img src="/assets/icon/<?php echo $rows['name']?>.ico">
-                    <span><?php echo $rows['showname']?></span>
+          <li class="pay_li" value="<?php echo htmlspecialchars((string)($rows['id']), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8')?>">
+             <img src="/assets/icon/<?php echo htmlspecialchars((string)($rows['name']), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8')?>.ico">
+                    <span><?php echo htmlspecialchars((string)($rows['showname']), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8')?></span>
           </li>
 		<?php }?>
         </ul>
@@ -109,7 +109,7 @@ if(checkwechat()){
 </div>
 <!--底部-->
 <div class="w1080 footer12">
-    <p> <?php echo $sitename?$sitename:$conf['sitename']?></p>
+    <p> <?php echo htmlspecialchars((string)($sitename?$sitename:$conf['sitename']), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8')?></p>
 </div>
 
 <script src="<?php echo $cdnpublic?>jquery/1.12.4/jquery.min.js"></script>

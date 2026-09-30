@@ -17,7 +17,7 @@ if(!defined('IN_PLUGIN'))exit();
 </head>
 <body style="background-color:#f6f6f6">
 <div style="display: flex;justify-content: center; padding-top: 20px;border-radius: 15px;height: 100px;text-align: center;align-items: center;">
-      <span style="font-size: 15px;font-weight:800;color:#020202;"><?php echo $order['name']?><br>
+      <span style="font-size: 15px;font-weight:800;color:#020202;"><?php echo htmlspecialchars((string)($order['name']), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8')?><br>
       <div style="display: flex;justify-content: center;">
           <strong style="font-size: 22px;color: #000000;padding-top: 6px;margin-right: 3px;">¥</strong>
           <strong style="font-size: 40px;color: #000000;"><?php echo $order['realmoney']?></strong>

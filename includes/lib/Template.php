@@ -18,6 +18,9 @@ class Template {
 	}
 
 	static private function ensureInside($file, $base){
+		$globalRoot = realpath(TEMPLATE_ROOT);
+		$baseRoot = realpath($base);
+		if($globalRoot === false || $baseRoot === false || ($baseRoot !== $globalRoot && strpos($baseRoot, $globalRoot.DIRECTORY_SEPARATOR) !== 0)) exit('Template path error');
 		$real = realpath($file);
 		$root = realpath($base);
 		if($real === false || $root === false || strpos($real, $root.DIRECTORY_SEPARATOR) !== 0) exit('Template path error');
@@ -26,7 +29,7 @@ class Template {
 
 	static public function getList(){
 		$dir = TEMPLATE_ROOT;
-		$dirArray[] = NULL;
+		$dirArray = [];
 		if (false != ($handle = opendir($dir))) {
 			$i = 0;
 			while (false !== ($file = readdir($handle))) {
@@ -70,11 +73,9 @@ class Template {
 	}
 
 	static public function exists($template){
-		$filename = TEMPLATE_ROOT.$template.'/index.php';
-		if(file_exists($filename)){
-			return true;
-		}else{
-			return false;
-		}
-	}
+        if(!is_string($template) || !preg_match('/^[a-zA-Z0-9_]{1,64}$/', $template)) return false;
+        $root = realpath(TEMPLATE_ROOT);
+        $file = realpath(TEMPLATE_ROOT.$template.'/index.php');
+        return $root !== false && $file !== false && strpos($file, $root.DIRECTORY_SEPARATOR) === 0 && is_file($file);
+    }
 }

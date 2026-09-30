@@ -17,12 +17,7 @@ if($conf['cert_open'] == 1){ //支付宝身份验证
 		$certify = new \Alipay\AlipayCertifyService($alipay_config);
 		$certifyResult = $certify->query($certtoken);
 		if($certifyResult['passed'] == 'T'){
-			if($DB->exec("update `pre_user` set `cert`=1 where `uid`='$uid'")){
-				$DB->exec("update `pre_user` set `certtime`='$date' where `uid`='$uid'");
-				if($conf['cert_money']>0){
-					changeUserMoney($uid, $conf['cert_money'], false, '实名认证');
-				}
-			}
+            epay_complete_certification($uid,$certtoken,$conf['cert_money']);
 		}else{
 			sysmsg('<center>实名认证未通过（'.$certifyResult['fail_reason'] .'）</center>');
 		}
@@ -53,10 +48,7 @@ if($conf['cert_open'] == 1){ //支付宝身份验证
 		}else{
 			$openid = $tokenArr['open_id'];
 		}
-		$DB->exec("update `pre_user` set `cert`=1,`certtime`=NOW(),`alipay_uid`=:user_id where `uid`=:uid", [':user_id'=>$openid, ':uid'=>$uid]);
-		if($conf['cert_money']>0){
-					changeUserMoney($uid, $conf['cert_money'], false, '实名认证');
-				}
+        epay_complete_certification($uid,null,$conf['cert_money'],['alipay_uid'=>$openid]);
 		@header('Content-Type: text/html; charset=UTF-8');
 		if($islogin2==1){
 			exit("<script language='javascript'>alert('实名认证成功！');window.location.href='./certificate.php';</script>");
@@ -78,12 +70,7 @@ if($conf['cert_open'] == 1){ //支付宝身份验证
 	$result = $qcloud->GetRealNameAuthResult($AuthToken);
 	if(isset($result['ResultType'])){
 		if($result['ResultType'] == '0'){
-			if($DB->exec("update `pre_user` set `cert`=1 where `uid`='$uid'")){
-				$DB->exec("update `pre_user` set `certtime`='$date' where `uid`='$uid'");
-				if($conf['cert_money']>0){
-					changeUserMoney($uid, $conf['cert_money'], false, '实名认证');
-				}
-			}
+            epay_complete_certification($uid,$AuthToken,$conf['cert_money']);
 		}else{
 			$msg = '实名认证未通过';
 			if($result['ResultType'] == '-1'){
@@ -114,12 +101,7 @@ if($conf['cert_open'] == 1){ //支付宝身份验证
 	$result = $aliyun->query($certtoken);
     if (isset($result['Code']) && $result['Code']==200) {
 		if($result['Data']['passed'] == 'T'){
-			if($DB->exec("update `pre_user` set `cert`=1 where `uid`='$uid'")){
-				$DB->exec("update `pre_user` set `certtime`='$date' where `uid`='$uid'");
-				if($conf['cert_money']>0){
-					changeUserMoney($uid, $conf['cert_money'], false, '实名认证');
-				}
-			}
+            epay_complete_certification($uid,$certtoken,$conf['cert_money']);
 		}else{
 			sysmsg('<center>实名认证未通过（'.$result['Data']['fail_reason'].'）</center>');
 		}
@@ -139,12 +121,7 @@ if($conf['cert_open'] == 1){ //支付宝身份验证
 	$result = $certify->query($certtoken);
     if(isset($result['response']['result_code']) && $result['response']['result_code'] == 'OK'){
 		if($result['response']['passed'] == 'T'){
-			if($DB->exec("update `pre_user` set `cert`=1 where `uid`='$uid'")){
-				$DB->exec("update `pre_user` set `certtime`='$date' where `uid`='$uid'");
-				if($conf['cert_money']>0){
-					changeUserMoney($uid, $conf['cert_money'], false, '实名认证');
-				}
-			}
+            epay_complete_certification($uid,$certtoken,$conf['cert_money']);
 		}else{
 			sysmsg('<center>实名认证未通过</center>');
 		}

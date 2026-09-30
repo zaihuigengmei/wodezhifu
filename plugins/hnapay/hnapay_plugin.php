@@ -556,7 +556,9 @@ class hnapay_plugin
 				$money = $_POST['tranAmt'];
 				$buyer = $_POST['userId'];
 
-				if ($out_trade_no == TRADE_NO && epay_callback_money_match($money, $order['realmoney'])) {
+				// WS01 notification section 5.5.5 defines yuan, unlike the cent request.
+				if ($out_trade_no === TRADE_NO && ($_POST['merId'] ?? null) === (string)$channel['appid']
+					&& epay_callback_money_match($money, $order['realmoney'])) {
 					processNotify($order, $trade_no, $buyer, $bill_trade_no, $bill_mch_trade_no);
 				}
 				return ['type'=>'html','data'=>'200'];
@@ -683,17 +685,11 @@ class hnapay_plugin
 
 		try{
 			$client = new HnaPayApi($channel['appid'], $channel['appkey'], $channel['appsecret'], 2);
+			$receiptContext = \lib\PrivateReceipt::context($channel, $bizParam);
 			$orderid = trim($bizParam['orderid']);
 			if(!preg_match('/^[A-Za-z0-9_-]{1,64}$/', $orderid)) throw new Exception('订单号格式不合法');
 			$result = $client->transferProof($orderid);
-			$dir = ROOT.'assets/uploads/';
-			if(!is_dir($dir)) mkdir($dir, 0755, true);
-			$realDir = realpath($dir);
-			if($realDir === false) throw new Exception('保存目录不合法');
-			$path = $realDir.'/'.$orderid.'.png';
-			file_put_contents($path, base64_decode($result['payCertificate']));
-			$image = '/assets/uploads/'.$orderid.'.png';
-			return ['code'=>0, 'msg'=>'电子回单生成成功！', 'download_url'=>$image];
+			return \lib\PrivateReceipt::store($receiptContext, base64_decode($result['payCertificate'], true), 'png');
 		}catch(Exception $ex){
 			return ['code'=>-1, 'msg'=>$ex->getMessage()];
 		}

@@ -38,7 +38,8 @@ case 'transferList':
 		$sql.=" AND `uid`='$uid'";
 	}
 	if(isset($_POST['type']) && !empty($_POST['type'])) {
-		$type = intval($_POST['type']);
+		$type = trim((string)$_POST['type']);
+        if(!in_array($type,['alipay','wxpay','qqpay','bank'],true)) exit(json_encode(['code'=>-1,'msg'=>'转账类型不合法']));
 		$sql.=" AND `type`='$type'";
 	}
 	if(isset($_POST['channel']) && !empty($_POST['channel'])) {
@@ -97,7 +98,8 @@ case 'statistics':
 		$sql.=" AND `uid`='$uid'";
 	}
 	if(isset($_POST['type']) && !empty($_POST['type'])) {
-		$type = intval($_POST['type']);
+		$type = trim((string)$_POST['type']);
+        if(!in_array($type,['alipay','wxpay','qqpay','bank'],true)) exit(json_encode(['code'=>-1,'msg'=>'转账类型不合法']));
 		$sql.=" AND `type`='$type'";
 	}
 	if(isset($_POST['dstatus']) && $_POST['dstatus']>-1) {
@@ -164,36 +166,18 @@ case 'balance_query':
 break;
 case 'setTransferStatus':
 	$biz_no=admin_safe_token($_POST['biz_no'], '付款单号');
-	$order = $DB->find('transfer', '*', ['biz_no' => $biz_no]);
-	if(!$order) exit('{"code":-1,"msg":"付款记录不存在！"}');
-	$status=intval($_POST['status']);
-	$reason = trim($_POST['reason']);
-	$data = ['status'=>$status];
-	if(!empty($reason)) $data['result'] = $reason;
-	if($status == 1 && empty($order['paytime'])) $data['paytime'] = date('Y-m-d H:i:s');
-	if($DB->update('transfer', $data, ['biz_no' => $biz_no])){
-		if($status == 2 && ($order['status'] == 3 || $order['status'] == 0) && $order['uid'] > 0){
-			changeUserMoney($order['uid'], $order['costmoney'], true, '代付退回', $biz_no);
-		}
-		exit('{"code":0,"msg":"succ"}');
-	}
-	else exit('{"code":-1,"msg":"修改失败['.$DB->error().']"}');
+    try {\lib\Transfer::finish($biz_no,intval($_POST['status']),trim($_POST['reason']??'')); exit(json_encode(['code'=>0,'msg'=>'succ']));}
+    catch(\Throwable $e){exit(json_encode(['code'=>-2,'msg'=>'状态冲突或确认失败，请核对']));}
 break;
 case 'delTransfer':
 	$biz_no=admin_safe_token($_POST['biz_no'], '付款单号');
-	if($DB->delete('transfer', ['biz_no' => $biz_no])!==false)exit('{"code":0,"msg":"succ"}');
+	if($DB->update('transfer', ['result'=>'已归档（保留资金凭证）'], ['biz_no'=>$biz_no,'status'=>2])!==false)exit('{"code":0,"msg":"已归档，保留资金凭证"}');
 	else exit('{"code":-1,"msg":"删除失败['.$DB->error().']"}');
 break;
 case 'refundTransfer':
 	$biz_no=admin_safe_token($_POST['biz_no'], '付款单号');
-	$order = $DB->find('transfer', '*', ['biz_no' => $biz_no]);
-    if(!$order) exit('{"code":-1,"msg":"付款记录不存在！"}');
-	if($DB->exec("UPDATE pre_transfer SET status='2' WHERE biz_no='$biz_no'")){
-		if($order['uid'] > 0){
-			changeUserMoney($order['uid'], $order['costmoney'], true, '代付退回', $biz_no);
-		}
-	}
-	exit('{"code":0,"msg":"已成功将¥'.$order['costmoney'].'退给商户'.$order['uid'].'"}');
+    try {\lib\Transfer::finish($biz_no,2,'管理员确认退款');exit(json_encode(['code'=>0,'msg'=>'已确认失败并退回余额']));}
+    catch(\Throwable $e){exit(json_encode(['code'=>-2,'msg'=>'状态冲突或退款未完成，请核对']));}
 break;
 case 'transfer_proof':
 	$biz_no=admin_safe_token($_POST['biz_no'], '付款单号');
@@ -203,25 +187,19 @@ break;
 case 'operation': //批量操作订单
 	$status=is_numeric($_POST['status'])?intval($_POST['status']):exit('{"code":-1,"msg":"请选择操作"}');
 	$checkbox=$_POST['checkbox'];
-	$i=0;
-	foreach($checkbox as $biz_no){
-		if($status==3){
-			$DB->delete('transfer', ['biz_no' => $biz_no]);
-			continue;
-		}
-		$order = $DB->find('transfer', '*', ['biz_no' => $biz_no]);
-		if($order){
-			$data = ['status'=>$status];
-			if($status == 1 && empty($order['paytime'])) $data['paytime'] = date('Y-m-d H:i:s');
-			if($DB->update('transfer', $data, ['biz_no' => $biz_no])){
-				if($status == 2 && ($order['status'] == 3 || $order['status'] == 0) && $order['uid'] > 0){
-					changeUserMoney($order['uid'], $order['costmoney'], true, '代付退回', $biz_no);
-				}
-				$i++;
-			}
-		}
-	}
-	exit('{"code":0,"msg":"成功改变'.$i.'条订单状态"}');
+    $i=0;
+    foreach($checkbox as $biz_no){
+        try {
+            if($status==3){
+                // Retain the financial tombstone and external intent instead of deleting it.
+                $r=$DB->find('transfer','status',['biz_no'=>$biz_no]);
+                if(!$r || !in_array((int)$r['status'],[1,2],true)) throw new \RuntimeException('未终结记录不可删除');
+                continue;
+            }
+            \lib\Transfer::finish($biz_no,$status,'管理员确认');$i++;
+        }catch(\Throwable $e){exit(json_encode(['code'=>-2,'msg'=>'批量确认未完成，请核对','completed'=>$i]));}
+    }
+    exit(json_encode(['code'=>0,'msg'=>'成功改变'.$i.'条订单状态']));
 break;
 
 case 'batch_submit':

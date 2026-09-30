@@ -9,7 +9,7 @@ include './head.php';
 $type_select = '<option value="0">支付方式</option>';
 $rs = $DB->getAll("SELECT * FROM pre_type WHERE status=1 ORDER BY id ASC");
 foreach($rs as $row){
-	$type_select .= '<option value="'.$row['id'].'">'.$row['showname'].'</option>';
+	$type_select .= '<option value="'.(int)$row['id'].'">'.htmlspecialchars($row['showname'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8').'</option>';
 }
 unset($rs);
 
@@ -82,7 +82,7 @@ unset($rs);
 </div>
     </div>
   </div>
-  <a style="display: none;" href="" id="vurl" rel="noreferrer" target="_blank"></a>
+  <a style="display: none;" href="" id="vurl" rel="noopener noreferrer" target="_blank"></a>
 
 <div class="modal" id="modal-statistics" role="dialog" aria-labelledby="myModalLabel" aria-hidden="true" data-backdrop="static">
 	<div class="modal-dialog">
@@ -126,7 +126,20 @@ unset($rs);
 <script src="../assets/js/bootstrap-table-page-jump-to.min.js"></script>
 <script src="../assets/js/custom.js"></script>
 <script>
-var is_user_refund = '<?php echo $conf['user_refund']?>';
+function escHtml(value){
+    return String(value == null ? '' : value).replace(/[&<>"']/g, function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});
+}
+function uiJs(value){
+    return escHtml(String(value == null ? '' : value).replace(/\\/g,'\\\\').replace(/%/g,'\\u0025').replace(/'/g,'\\u0027').replace(/"/g,'\\u0022').replace(/</g,'\\u003c').replace(/>/g,'\\u003e').replace(/&/g,'\\u0026').replace(/\r/g,'\\r').replace(/\n/g,'\\n').replace(/\u2028/g,'\\u2028').replace(/\u2029/g,'\\u2029'));
+}
+function safeUiUrl(value){
+    try { if(typeof value !== 'string' || /[\u0000-\u0020\u007f\\]/.test(value)) return null;
+        var u=new URL(value,window.location.href);
+        return /^https?:$/.test(u.protocol) && !u.username && !u.password ? u.href : null;
+    } catch(e){return null;}
+}
+
+var is_user_refund = '<?php echo (int)$conf['user_refund']?>';
 var is_print = '<?php echo $conf['orderprint']==1&&$userrow['print_order']>0?'1':'0';?>';
 $(document).ready(function(){
 	updateToolbar();
@@ -144,34 +157,34 @@ $(document).ready(function(){
 				field: 'trade_no',
 				title: '系统订单号/商户订单号',
 				formatter: function(value, row, index) {
-					return '<a href="javascript:showOrder(\''+value+'\')" title="点击查看详情">'+value+'</a></b><br/>'+row.out_trade_no;
+					return '<a href="javascript:showOrder(\''+uiJs(value)+'\')" title="点击查看详情">'+escHtml(value)+'</a></b><br/>'+escHtml(row.out_trade_no);
 				}
 			},
 			{
 				field: 'name',
-				title: '商品名称'
+				title: '商品名称', formatter: function(value){return escHtml(value);}
 			},
 			{
 				field: 'money',
 				title: '商品金额',
 				formatter: function(value, row, index) {
-					return '¥<b>'+value+'</b>';
+					return '¥<b>'+escHtml(value)+'</b>';
 				}
 			},
 			{
 				field: 'realmoney',
 				title: '实际支付',
 				formatter: function(value, row, index) {
-					return '¥<b>'+value+'</b>';
+					return '¥<b>'+escHtml(value)+'</b>';
 				}
 			},
 			{
 				field: 'typename',
 				title: '支付方式',
 				formatter: function(value, row, index) {
-					var html = value ? '<b><img src="/assets/icon/'+value+'.ico" width="16" onerror="this.style.display=\'none\'">'+row.typeshowname+'</b>' : '';
+					var html = value ? '<b><img src="/assets/icon/'+encodeURIComponent(value)+'.ico" width="16" onerror="this.style.display=\'none\'">'+escHtml(row.typeshowname)+'</b>' : '';
 					if(row.subchannel > 0 && row.submchid > 0){
-						html += '('+row.submchid+')';
+						html += '('+escHtml(row.submchid)+')';
 					}
 					return html;
 				}
@@ -180,7 +193,7 @@ $(document).ready(function(){
 				field: 'addtime',
 				title: '创建时间/完成时间',
 				formatter: function(value, row, index) {
-					return value+'<br/>'+(row.endtime??'&nbsp;');
+					return escHtml(value)+'<br/>'+(row.endtime == null ? '&nbsp;' : escHtml(row.endtime));
 				}
 			},
 			{
@@ -192,7 +205,7 @@ $(document).ready(function(){
 					}else if(value == '2'){
 						text = '<font color=red>已退款</font>';
 						if(row.refundmoney > 0 && row.refundmoney < row.realmoney){
-							text += '<br/><font color=red>('+row.refundmoney+'元)</font>';
+							text += '<br/><font color=red>('+escHtml(row.refundmoney)+'元)</font>';
 						}
 					}else if(value == '3'){
 						text = '<font color=red>已冻结</font>';
@@ -201,12 +214,14 @@ $(document).ready(function(){
 					}else{
 						text = '<font color=blue>未支付</font>';
 					}
-					if(row.plugin=='alipayd'){
+					if(row.plugin=='alipayd' || row.plugin=='wxpaynp'){
 						if(row.settle == '1'){
 							text += '<br/><font color=#8c8f93>待结算</font>';
 						}else if(row.settle == '2'){
 							text += '<br/><font color=#37db3c>结算成功</font>';
-						}else if(row.settle == '3'){
+						}else if(row.settle == '4'){
+                            text += '<br/><font color=orange>结算待核对（禁止重试）</font>';
+                        }else if(row.settle == '3'){
 							text += '<br/><font color=#ed6565>结算失败</font>';
 						}
 					}else if(row.plugin=='alipayrp'){
@@ -214,7 +229,9 @@ $(document).ready(function(){
 							text += '<br/><font color=#8c8f93>待转账</font>';
 						}else if(row.settle == '2'){
 							text += '<br/><font color=#37db3c>转账成功</font>';
-						}else if(row.settle == '3'){
+						}else if(row.settle == '4'){
+                            text += '<br/><font color=orange>结算待核对（禁止重试）</font>';
+                        }else if(row.settle == '3'){
 							text += '<br/><font color=#ed6565>转账失败</font>';
 						}
 					}
@@ -225,12 +242,12 @@ $(document).ready(function(){
 				field: '',
 				title: '操作',
 				formatter: function(value, row, index) {
-					var html = '<a href="./record.php?type=3&kw='+row.trade_no+'" class="btn btn-info btn-xs">明细</a>&nbsp;<a href="javascript:callnotify(\''+row.trade_no+'\')" class="btn btn-success btn-xs">补单</a>';
+					var html = '<a href="./record.php?type=3&kw='+escHtml(row.trade_no)+'" class="btn btn-info btn-xs">明细</a>&nbsp;<a href="javascript:callnotify(\''+uiJs(row.trade_no)+'\')" class="btn btn-success btn-xs">补单</a>';
 					if(is_user_refund=='1' && (row.status=='1' || row.status=='3' || row.status=='2' && row.refundmoney > 0 && row.refundmoney < row.realmoney)){
-						html += '&nbsp;<a href="javascript:refund(\''+row.trade_no+'\')" class="btn btn-danger btn-xs">退款</a>';
+						html += '&nbsp;<a href="javascript:refund(\''+uiJs(row.trade_no)+'\')" class="btn btn-danger btn-xs">退款</a>';
 					}
 					if(is_print=='1'&&row.status=='1'){
-						html += '&nbsp;<a href="javascript:void(0);" onclick="printOrder(\''+row.trade_no+'\')" class="btn btn-warning btn-xs">打印</a>';
+						html += '&nbsp;<a href="javascript:void(0);" onclick="printOrder(\''+uiJs(row.trade_no)+'\')" class="btn btn-warning btn-xs">打印</a>';
 					}
 					return html;
 				}
@@ -256,11 +273,13 @@ function callnotify(trade_no){
 		success : function(data) {
 			layer.close(ii);
 			if(data.code == 0){
-				$("#vurl").attr("href",data.url);
+				var notifyUrl = safeUiUrl(data.url);
+                if(!notifyUrl){ layer.alert('通知地址无效'); return; }
+                $("#vurl").attr("href",notifyUrl);
 				document.getElementById("vurl").click();
 				listTable();
 			}else{
-				layer.alert(data.msg);
+				layer.alert(escHtml(data.msg));
 			}
 		},
 		error:function(data){
@@ -279,11 +298,13 @@ function callreturn(trade_no){
 		success : function(data) {
 			layer.close(ii);
 			if(data.code == 0){
-				$("#vurl").attr("href",data.url);
+				var notifyUrl = safeUiUrl(data.url);
+                if(!notifyUrl){ layer.alert('通知地址无效'); return; }
+                $("#vurl").attr("href",notifyUrl);
 				document.getElementById("vurl").click();
 				listTable();
 			}else{
-				layer.alert(data.msg);
+				layer.alert(escHtml(data.msg));
 			}
 		},
 		error:function(data){
@@ -305,7 +326,7 @@ function refund(trade_no) {
 				layer.open({
 					area: ['360px'],
 					title: '退款确认',
-					content: '<p>此操作将直接原路退款该订单，每个订单只能操作一次退款，退款金额不能大于订单金额。</p><div class="form-group"><div class="input-group"><div class="input-group-addon">退款金额</div><input type="text" class="form-control" name="refund2" value="'+data.money+'" placeholder="请输入退款金额" autocomplete="off"/></div></div><div class="form-group"><div class="input-group"><div class="input-group-addon">登录密码</div><input type="text" class="form-control" name="paypwd" value="" placeholder="请输入用户登录密码" autocomplete="off"/></div></div>',
+					content: '<p>此操作将直接原路退款该订单，每个订单只能操作一次退款，退款金额不能大于订单金额。</p><div class="form-group"><div class="input-group"><div class="input-group-addon">退款金额</div><input type="text" class="form-control" name="refund2" value="'+escHtml(data.money)+'" placeholder="请输入退款金额" autocomplete="off"/></div></div><div class="form-group"><div class="input-group"><div class="input-group-addon">登录密码</div><input type="text" class="form-control" name="paypwd" value="" placeholder="请输入用户登录密码" autocomplete="off"/></div></div>',
 					yes: function(){
 						var money = $("input[name='refund2']").val();
 						var paypwd = $("input[name='paypwd']").val();
@@ -321,9 +342,9 @@ function refund(trade_no) {
 							success : function(data) {
 								layer.close(ii);
 								if(data.code == 0){
-									layer.alert(data.msg, {icon:1}, function(){ layer.closeAll();searchSubmit(); });
+									layer.alert(escHtml(data.msg), {icon:1}, function(){ layer.closeAll();searchSubmit(); });
 								}else{
-									layer.alert(data.msg, {icon:7});
+									layer.alert(escHtml(data.msg), {icon:7});
 								}
 							},
 							error:function(data){
@@ -334,7 +355,7 @@ function refund(trade_no) {
 					}
 				});
 			}else{
-				layer.alert(data.msg, {icon:7});
+				layer.alert(escHtml(data.msg), {icon:7});
 			}
 		},
 		error:function(data){
@@ -356,41 +377,41 @@ function showOrder(trade_no) {
 				var data = data.data;
 				var item = '<table class="table table-condensed table-hover" id="orderItem">';
 				item += '<tr><td colspan="6" style="text-align:center" class="orderTitle"><b>订单信息</b></td></tr>';
-				item += '<tr class="orderTitle"><td class="info" class="orderTitle">系统订单号</td><td colspan="5" class="orderContent">'+data.trade_no+'</td></tr>';
-				item += '<tr><td class="info" class="orderTitle">商户订单号</td><td colspan="5" class="orderContent">'+data.out_trade_no+'</td></tr>';
-				item += '<tr><td class="info" class="orderTitle">接口订单号</td><td colspan="5" class="orderContent">'+data.api_trade_no+'</td></tr>';
+				item += '<tr class="orderTitle"><td class="info" class="orderTitle">系统订单号</td><td colspan="5" class="orderContent">'+escHtml(data.trade_no)+'</td></tr>';
+				item += '<tr><td class="info" class="orderTitle">商户订单号</td><td colspan="5" class="orderContent">'+escHtml(data.out_trade_no)+'</td></tr>';
+				item += '<tr><td class="info" class="orderTitle">接口订单号</td><td colspan="5" class="orderContent">'+escHtml(data.api_trade_no)+'</td></tr>';
 				if(data.bill_mch_trade_no){
-					item += '<tr><td class="info" class="orderTitle">渠道交易单号</td><td colspan="5" class="orderContent">'+data.bill_mch_trade_no+'</td></tr>';
+					item += '<tr><td class="info" class="orderTitle">渠道交易单号</td><td colspan="5" class="orderContent">'+escHtml(data.bill_mch_trade_no)+'</td></tr>';
 				}
 				if(data.bill_trade_no){
-					item += '<tr><td class="info" class="orderTitle">用户交易单号</td><td colspan="5" class="orderContent">'+data.bill_trade_no+'</td></tr>';
+					item += '<tr><td class="info" class="orderTitle">用户交易单号</td><td colspan="5" class="orderContent">'+escHtml(data.bill_trade_no)+'</td></tr>';
 				}
-				item += '<tr><td class="info" class="orderTitle">支付方式</td><td colspan="5" class="orderContent">'+data.typename+'</td></tr>';
+				item += '<tr><td class="info" class="orderTitle">支付方式</td><td colspan="5" class="orderContent">'+escHtml(data.typename)+'</td></tr>';
 				if(data.subchannel > 0){
-					item += '<tr><td class="info" class="orderTitle">自定义子通道</td><td colspan="5" class="orderContent">'+data.subchannelname+'</td></tr>';
+					item += '<tr><td class="info" class="orderTitle">自定义子通道</td><td colspan="5" class="orderContent">'+escHtml(data.subchannelname)+'</td></tr>';
 				}
-				item += '<tr><td class="info" class="orderTitle">商品名称</td><td colspan="5" class="orderContent">'+data.name+'</td></tr>';
-				item += '<tr><td class="info" class="orderTitle">订单金额</td><td colspan="5" class="orderContent">'+data.money+'</td></tr>';
-				item += '<tr><td class="info" class="orderTitle">实际支付金额</td><td colspan="5" class="orderContent">'+data.realmoney+'</td></tr>';
-				item += '<tr><td class="info" class="orderTitle">商户分成金额</td><td colspan="5" class="orderContent">'+data.getmoney+'</td></tr>';
-				item += '<tr><td class="info" class="orderTitle">创建时间</td><td colspan="5" class="orderContent">'+data.addtime+'</td></tr>';
-				item += '<tr><td class="info" class="orderTitle">完成时间</td><td colspan="5" class="orderContent">'+data.endtime+'</td></tr>';
+				item += '<tr><td class="info" class="orderTitle">商品名称</td><td colspan="5" class="orderContent">'+escHtml(data.name)+'</td></tr>';
+				item += '<tr><td class="info" class="orderTitle">订单金额</td><td colspan="5" class="orderContent">'+escHtml(data.money)+'</td></tr>';
+				item += '<tr><td class="info" class="orderTitle">实际支付金额</td><td colspan="5" class="orderContent">'+escHtml(data.realmoney)+'</td></tr>';
+				item += '<tr><td class="info" class="orderTitle">商户分成金额</td><td colspan="5" class="orderContent">'+escHtml(data.getmoney)+'</td></tr>';
+				item += '<tr><td class="info" class="orderTitle">创建时间</td><td colspan="5" class="orderContent">'+escHtml(data.addtime)+'</td></tr>';
+				item += '<tr><td class="info" class="orderTitle">完成时间</td><td colspan="5" class="orderContent">'+escHtml(data.endtime)+'</td></tr>';
 				if(data.status==2){
-					item += '<tr><td class="info" class="orderTitle">退款时间</td><td colspan="5" class="orderContent">'+data.refundtime+'</td></tr>';
+					item += '<tr><td class="info" class="orderTitle">退款时间</td><td colspan="5" class="orderContent">'+escHtml(data.refundtime)+'</td></tr>';
 				}
-				item += '<tr><td class="info" class="orderTitle" title="只有在官方通道支付完成后才能显示">支付账号</td><td colspan="5" class="orderContent">'+data.buyer+'</td></tr>';
+				item += '<tr><td class="info" class="orderTitle" title="只有在官方通道支付完成后才能显示">支付账号</td><td colspan="5" class="orderContent">'+escHtml(data.buyer)+'</td></tr>';
 				if(data.mobile){
-					item += '<tr><td class="info" class="orderTitle">手机号码</td><td colspan="5" class="orderContent">'+data.mobile+'</td></tr>';
+					item += '<tr><td class="info" class="orderTitle">手机号码</td><td colspan="5" class="orderContent">'+escHtml(data.mobile)+'</td></tr>';
 				}
-				item += '<tr><td class="info" class="orderTitle">网站域名</td><td colspan="5" class="orderContent"><a href="http://'+data.domain+'" target="_blank" rel="noreferrer">'+data.domain+'</a></td></tr>';
-				item += '<tr><td class="info" class="orderTitle">支付IP</td><td colspan="5" class="orderContent"><a href="https://m.ip138.com/iplookup.asp?ip='+data.ip+'" target="_blank" rel="noreferrer">'+data.ip+'</a></td></tr>';
-				item += '<tr><td class="info" class="orderTitle">扩展参数</td><td colspan="5" class="orderContent">'+data.param+'</td></tr>';
+				item += '<tr><td class="info" class="orderTitle">网站域名</td><td colspan="5" class="orderContent"><a href="http://'+escHtml(data.domain)+'" target="_blank" rel="noopener noreferrer">'+escHtml(data.domain)+'</a></td></tr>';
+				item += '<tr><td class="info" class="orderTitle">支付IP</td><td colspan="5" class="orderContent"><a href="https://m.ip138.com/iplookup.asp?ip='+escHtml(data.ip)+'" target="_blank" rel="noopener noreferrer">'+escHtml(data.ip)+'</a></td></tr>';
+				item += '<tr><td class="info" class="orderTitle">扩展参数</td><td colspan="5" class="orderContent">'+escHtml(data.param)+'</td></tr>';
 				item += '<tr><td class="info" class="orderTitle">订单状态</td><td colspan="5" class="orderContent">'+status[data.status]+'</td></tr>';
 				if(data.status>0){
-					item += '<tr><td class="info" class="orderTitle">通知状态</td><td colspan="5" class="orderContent">'+(data.notify==0?'<span class="label label-success">通知成功</span>':'<span class="label label-danger">通知失败</span>（已通知'+data.notify+'次）')+'</td></tr>';
+					item += '<tr><td class="info" class="orderTitle">通知状态</td><td colspan="5" class="orderContent">'+(data.notify==0?'<span class="label label-success">通知成功</span>':'<span class="label label-danger">通知失败</span>（已通知'+escHtml(data.notify)+'次）')+'</td></tr>';
 				}
 				item += '<tr><td colspan="6" style="text-align:center" class="orderTitle"><b>订单操作</b></td></tr>';
-				item += '<tr><td colspan="6"><a href="javascript:callnotify(\''+data.trade_no+'\')" class="btn btn-xs btn-default">重新通知(异步)</a>&nbsp;<a href="javascript:callreturn(\''+data.trade_no+'\')" class="btn btn-xs btn-default">重新通知(同步)</a>'+(data.combine==1?'&nbsp;<a href="javascript:showSubOrders(\''+data.trade_no+'\')" class="btn btn-xs btn-default">查看子订单列表</a>':'')+'</td></tr>';
+				item += '<tr><td colspan="6"><a href="javascript:callnotify(\''+uiJs(data.trade_no)+'\')" class="btn btn-xs btn-default">重新通知(异步)</a>&nbsp;<a href="javascript:callreturn(\''+uiJs(data.trade_no)+'\')" class="btn btn-xs btn-default">重新通知(同步)</a>'+(data.combine==1?'&nbsp;<a href="javascript:showSubOrders(\''+uiJs(data.trade_no)+'\')" class="btn btn-xs btn-default">查看子订单列表</a>':'')+'</td></tr>';
 				item += '</table>';
 				var area = [$(window).width() > 480 ? '480px' : '100%', ';max-height:100%'];
 				layer.open({
@@ -401,7 +422,7 @@ function showOrder(trade_no) {
 				  content: item
 				});
 			}else{
-				layer.alert(data.msg);
+				layer.alert(escHtml(data.msg));
 			}
 		},
 		error:function(data){
@@ -422,12 +443,12 @@ function statistics(){
             if(data.code == 0){
                 var element = $('#modal-statistics');
                 var htmlContent = $("#statistics").html().replace(/\{(\w+)\}/g, function (match, key) {
-                    return data.data[key] || '';
+                    return escHtml(data.data[key] == null ? '' : data.data[key]);
                 });
                 element.find('.modal-body').html(htmlContent);
                 element.modal('show');
             }else{
-                layer.alert(data.msg);
+                layer.alert(escHtml(data.msg));
             }
         },
         error:function(data){
@@ -453,9 +474,9 @@ function showSubOrders(trade_no){
 				for(var i=0; i<list.length; i++){
 					var statustext = status[list[i].status];
 					if(list[i].status == 2 && list[i].refundmoney > 0 && list[i].refundmoney < list[i].money){
-						statustext += '<font color=red>('+list[i].refundmoney+')</font>';
+						statustext += '<font color=red>('+escHtml(list[i].refundmoney)+')</font>';
 					}
-					item += '<tr><td>'+list[i].sub_trade_no+'</td><td>'+list[i].api_trade_no+'</td><td>¥<b>'+list[i].money+'</b></td><td>'+statustext+'</td><td>'+(data.settle>0?settle[list[i].settle]:'')+'</td></tr>';
+					item += '<tr><td>'+escHtml(list[i].sub_trade_no)+'</td><td>'+escHtml(list[i].api_trade_no)+'</td><td>¥<b>'+escHtml(list[i].money)+'</b></td><td>'+statustext+'</td><td>'+(data.settle>0?settle[list[i].settle]:'')+'</td></tr>';
 				}
 				item += '</tbody></table>';
 				var area = [$(window).width() > 680 ? '680px' : '100%'];
@@ -468,7 +489,7 @@ function showSubOrders(trade_no){
 				  content: item
 				});
 			}else{
-				layer.alert(data.msg);
+				layer.alert(escHtml(data.msg));
 			}
 		},
 		error:function(data){
@@ -502,7 +523,7 @@ function printOrder(trade_no){
 				if(data.code == 0){
 					layer.alert('打印指令已发送到打印机', {icon:1}, function(){ layer.closeAll(); });
 				}else{
-					layer.alert(data.msg, {icon:7});
+					layer.alert(escHtml(data.msg), {icon:7});
 				}
 			},
 			error:function(data){

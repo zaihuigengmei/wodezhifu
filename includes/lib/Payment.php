@@ -5,6 +5,26 @@ use Exception;
 
 class Payment {
 
+    private static function safeResultUrl($url, $paymentScheme = false){
+        if (!is_string($url) || $url === '' || preg_match('/[\x00-\x20\x7f\\\\]/', $url)) throw new Exception('支付跳转地址无效');
+        if (substr($url, 0, 2) === '//') throw new Exception('支付跳转地址无效');
+        $scheme = parse_url($url, PHP_URL_SCHEME);
+        if ($scheme !== null && $scheme !== false) {
+            $allowed = $paymentScheme ? ['http','https','weixin','alipays','alipay','mqqapi','qqwallet','unionpay','upwrp'] : ['http','https'];
+            if (!in_array(strtolower($scheme), $allowed, true)) throw new Exception('支付跳转协议无效');
+            if (in_array(strtolower($scheme), ['http','https'], true) && (!parse_url($url, PHP_URL_HOST) || parse_url($url, PHP_URL_USER) !== null)) throw new Exception('支付跳转地址无效');
+        }
+        return $url;
+    }
+
+    private static function resultPage($page){
+        if (!is_string($page) || !preg_match('/^[a-zA-Z0-9_-]+$/D', $page)) throw new Exception('支付页面无效');
+        $root = realpath(PAYPAGE_ROOT);
+        $file = realpath(PAYPAGE_ROOT.$page.'.php');
+        if (!$root || !$file || !is_file($file) || strpos($file, $root.DIRECTORY_SEPARATOR) !== 0) throw new Exception('支付页面无效');
+        return $file;
+    }
+
     //生成待签名字符串
     static private function getSignContent($data){
         ksort($data);
@@ -19,7 +39,7 @@ class Payment {
 
     //生成签名
     static public function makeSign($data, $md5key) {
-        $sign_type = $data['sign_type'] ? $data['sign_type'] : 'MD5';
+        $sign_type = !empty($data['sign_type']) ? $data['sign_type'] : 'MD5';
         $signStr = self::getSignContent($data);
         if($sign_type == 'RSA'){
             global $conf;
@@ -37,7 +57,7 @@ class Payment {
     //验证签名
     static public function verifySign($data, $md5key, $publicKey) {
         if(!isset($data['sign'])) throw new Exception('缺少签名参数');
-        $sign_type = $data['sign_type'] ? $data['sign_type'] : 'MD5';
+        $sign_type = !empty($data['sign_type']) ? $data['sign_type'] : 'MD5';
         if($sign_type == 'RSA'){
             $public_key = base64ToPem($publicKey, 'PUBLIC KEY');
             $pkey = openssl_pkey_get_public($public_key);
@@ -55,11 +75,13 @@ class Payment {
     static public function echoDefault($result){
         global $cdnpublic,$order,$conf,$sitename,$ordername,$siteurl;
         $type = $result['type'];
+        if (in_array($type, ['jump','qrcode','scheme'], true)) $result['url'] = self::safeResultUrl($result['url'], $type !== 'jump');
+        if ($type === 'return') $result['url'] = self::safeResultUrl($result['url']);
         if(!$type) return false;
         switch($type){
             case 'jump': //跳转
                 $selfurl = is_self_url($result['url']);
-                $html_text = '<script>window.location.replace(\''.$result['url'].'\');</script>';
+                $html_text = '<script>window.location.replace('.json_encode(self::safeResultUrl($result['url']), JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT).');</script>';
                 if(!isset($result['submit']) && is_url($result['url']) && !$selfurl && ($conf['wxpay_qrpaylogin'] == 1 && checkwechat()) || ($conf['alipay_qrpaylogin'] == 1 && checkalipay())){
                     self::updateOrderPayUrl(TRADE_NO, $result['url']);
                     $result['url'] = $siteurl.'pay/checkpay/'.TRADE_NO.'/';
@@ -85,7 +107,7 @@ class Payment {
                 include_once SYSTEM_ROOT.'txprotect.php';
                 if(isset($result['data'])) extract($result['data']);
                 if($conf['pageordername']==1)$order['name']=$ordername?$ordername:'onlinepay';
-                include PAYPAGE_ROOT.$result['page'].'.php';
+                include self::resultPage($result['page']);
                 break;
             case 'qrcode': //扫码页面
                 $selfurl = is_self_url($result['url']);
@@ -134,7 +156,7 @@ class Payment {
                         break;
                     }
                 }
-                include PAYPAGE_ROOT.$result['page'].'.php';
+                include self::resultPage($result['page']);
                 break;
             case 'return': //同步回调
                 returnTemplate($result['url']);
@@ -156,6 +178,8 @@ class Payment {
         global $order,$siteurl,$conf;
         if(!$result) return false;
         $type = $result['type'];
+        if (in_array($type, ['jump','qrcode','scheme'], true)) $result['url'] = self::safeResultUrl($result['url'], $type !== 'jump');
+        if ($type === 'return') $result['url'] = self::safeResultUrl($result['url']);
         if(!$type) return false;
         if(defined('API_INIT')){
             $json = ['code'=>0, 'trade_no'=>TRADE_NO];
@@ -340,50 +364,54 @@ class Payment {
         return $flag;
     }
 
+    private static $accountingPermit=null;
+    public static function consumeAccountingPermit($permit,$trade){
+        global $DB;
+        if(!$DB->db->inTransaction() || !$permit || $permit!==self::$accountingPermit || $permit->trade!==$trade) throw new \RuntimeException('非受控订单入账被拒绝');
+        self::$accountingPermit=null; // one use, minted only after locked first-paid transition
+    }
+
     // 订单回调处理
-    static public function processOrder($isnotify, $order, $api_trade_no, $buyer = null, $bill_trade_no = null, $bill_mch_trade_no = null, $end_time = null){
+    static public function processOrder($isnotify, $order, $api_trade_no, $buyer = null, $bill_trade_no = null, $bill_mch_trade_no = null, $end_time = null, $redirect = true){
         global $DB,$conf,$siteurl;
-        if($order['status']==0 || $order['status']==4){
-            if($DB->exec("UPDATE `pre_order` SET `status`=1 WHERE `trade_no`='".$order['trade_no']."'")){
-
-                $data = ['endtime'=>'NOW()', 'date'=>'CURDATE()'];
-                if(!empty($api_trade_no)){
-                    $data['api_trade_no'] = $api_trade_no;
-                    $order['api_trade_no'] = $api_trade_no;
-                }
-                if(!empty($buyer) && empty($order['buyer'])){
-                    $data['buyer'] = $buyer;
-                    $order['buyer'] = $buyer;
-                }
-                if(!empty($bill_trade_no)) $data['bill_trade_no'] = $bill_trade_no;
-                if(!empty($bill_mch_trade_no)) $data['bill_mch_trade_no'] = $bill_mch_trade_no;
-                if(!empty($end_time)){
+        // This entrypoint owns its commit: no notification may escape an ambient transaction.
+        if ($DB->db->inTransaction()) throw new \RuntimeException('支付回调不允许嵌套外层事务');
+        $effects = [];
+        Finance::transaction(function() use ($DB, &$order, &$effects, $isnotify, $api_trade_no, $buyer, $bill_trade_no, $bill_mch_trade_no, $end_time){
+            $stored = Finance::row('SELECT * FROM pre_order WHERE trade_no=:trade FOR UPDATE', [':trade'=>$order['trade_no']]);
+            if (!$stored) throw new \RuntimeException('支付订单不存在');
+            // Presentation-only joined fields may be absent in the base order table.
+            $requestedSettle = $order['settle'] ?? 0;
+            $order = array_merge($order, $stored);
+            $first = in_array((int)$stored['status'], [0, 4], true);
+            $data = [];
+            if ($first) {
+                $data = ['status'=>1, 'endtime'=>'NOW()', 'date'=>'CURDATE()'];
+                if ($requestedSettle > 0) $data['settle'] = $requestedSettle;
+            }
+            if ($first || (int)$stored['status'] === 1) {
+                if (!empty($api_trade_no) && ($first || empty($stored['api_trade_no']))) $data['api_trade_no'] = $api_trade_no;
+                if (!empty($buyer) && empty($stored['buyer'])) $data['buyer'] = $buyer;
+                if (!empty($bill_trade_no) && ($first || empty($stored['bill_trade_no']))) $data['bill_trade_no'] = $bill_trade_no;
+                if (!empty($bill_mch_trade_no) && ($first || empty($stored['bill_mch_trade_no']))) $data['bill_mch_trade_no'] = $bill_mch_trade_no;
+                if (!empty($end_time) && $first) {
+                    if (strtotime($end_time) === false) throw new \RuntimeException('支付完成时间格式错误');
                     $data['endtime'] = $end_time;
-                    $date['date'] = date('Y-m-d', strtotime($end_time));
+                    $data['date'] = date('Y-m-d', strtotime($end_time));
                 }
-                if($order['settle']>0) $data['settle'] = $order['settle'];
-                $DB->update('order', $data, ['trade_no'=>$order['trade_no']]);
-
-                processOrder($order, $isnotify);
+                if ($data) Finance::checked($DB->update('order', $data, ['trade_no'=>$stored['trade_no']]));
+                $order = array_merge($order, $data);
+                if ($first) {
+                    self::$accountingPermit=(object)['trade'=>$stored['trade_no']];
+                    try { epay_account_order($order, $isnotify, $effects, self::$accountingPermit); }
+                    finally { self::$accountingPermit=null; }
+                }
             }
-        }elseif(empty($order['api_trade_no']) && !empty($api_trade_no)){
-            $data = ['api_trade_no'=>$api_trade_no];
-            if(!empty($buyer) && empty($order['buyer'])) $data['buyer'] = $buyer;
-            if(!empty($bill_trade_no)) $data['bill_trade_no'] = $bill_trade_no;
-            if(!empty($bill_mch_trade_no)) $data['bill_mch_trade_no'] = $bill_mch_trade_no;
-            if(!empty($end_time)){
-                $data['endtime'] = $end_time;
-                $data['date'] = date('Y-m-d', strtotime($end_time));
-            }
-            $DB->update('order', $data, ['trade_no'=>$order['trade_no']]);
-        }elseif(empty($order['buyer']) && !empty($buyer)){
-            $data['buyer'] = $buyer;
-            $DB->update('order', $data, ['trade_no'=>$order['trade_no']]);
-        }
-        if($isnotify && $order['settle']>0){
-            $DB->update('order', ['settle'=>$order['settle']], ['trade_no'=>$order['trade_no']]);
-        }
-        if(!$isnotify){
+            $order = array_merge($order, Finance::row('SELECT * FROM pre_order WHERE trade_no=:trade', [':trade'=>$stored['trade_no']]));
+            return $order;
+        });
+        epay_run_order_effects($effects);
+        if(!$isnotify && $redirect){
             include_once SYSTEM_ROOT.'txprotect.php';
             if($order['status'] == 2 || $order['black']){
                 $jumpurl = '/payerr.html';
@@ -399,35 +427,74 @@ class Payment {
             }
             returnTemplate($jumpurl);
         }
+        return $order;
     }
 
     // 更新订单信息
     static public function updateOrder($trade_no, $api_trade_no, $buyer = null, $status = null){
         global $DB;
-        $data = ['api_trade_no'=>$api_trade_no];
-        if(!empty($buyer)) $data['buyer'] = $buyer;
-        if($status) $data['status'] = $status;
-        $DB->update('order', $data, ['trade_no'=>$trade_no]);
+        return Finance::transaction(function() use($DB,$trade_no,$api_trade_no,$buyer,$status){
+            $row=Finance::row('SELECT * FROM pre_order WHERE trade_no=:trade FOR UPDATE',[':trade'=>$trade_no]);
+            if(!$row) throw new \RuntimeException('支付订单不存在');
+            $data=[];
+            // Checkout metadata must never regress paid/refunded/frozen states.
+            if(!empty($api_trade_no) && empty($row['api_trade_no'])) $data['api_trade_no']=$api_trade_no;
+            if(!empty($buyer) && empty($row['buyer'])) $data['buyer']=$buyer;
+            if($status !== null && (int)$status !== 0){
+                if((int)$status !== 4) throw new \RuntimeException('支付终态必须通过订单入账入口确认');
+                if((int)$row['status'] === 0) $data['status']=4;
+            }
+            if($data) Finance::checked($DB->update('order',$data,['trade_no'=>$trade_no]));
+            return true;
+        });
     }
 
     // 更新订单扩展信息
     static public function updateOrderExt($trade_no, $data){
         global $DB;
-        $DB->update('order', ['ext'=>serialize($data)], ['trade_no'=>$trade_no]);
+        if (!is_array($data)) throw new \InvalidArgumentException('订单扩展信息必须为数组');
+        return Finance::transaction(function() use ($DB, $trade_no, $data){
+            $row = Finance::row('SELECT ext FROM pre_order WHERE trade_no=:trade FOR UPDATE', [':trade'=>$trade_no]);
+            if (!$row) throw new \RuntimeException('支付订单不存在');
+            $raw = $row['ext'];
+            $latest = ($raw === null || $raw === '') ? [] : @unserialize($raw, ['allowed_classes'=>false]);
+            if (!is_array($latest)) throw new \RuntimeException('订单扩展信息损坏，需核对');
+            // These durable intents belong exclusively to the Checkout CAS writer.
+            foreach (['_bepusdt_checkout', '_epusdt_checkout', '_epusdtapi_checkout'] as $key) unset($data[$key]);
+            $merged = serialize(array_replace($latest, $data));
+            if ($merged === $raw) return true;
+            $n = Finance::checked($DB->exec('UPDATE pre_order SET ext=:new WHERE trade_no=:trade AND ext <=> :old', [':new'=>$merged, ':trade'=>$trade_no, ':old'=>$raw]));
+            if ($n !== 1) throw new \RuntimeException('订单扩展信息并发冲突');
+            return true;
+        });
     }
 
     // 更新合单状态
     static public function updateOrderCombine($trade_no, $sub_orders = null){
         global $DB;
-        $DB->update('order', ['combine'=>1], ['trade_no'=>$trade_no]);
-        if(!empty($sub_orders)){
-            $DB->delete('suborder', ['trade_no'=>$trade_no]);
-            foreach($sub_orders as $data){
-                $data['trade_no'] = $trade_no;
-                $data['status'] = 0;
-                $DB->insert('suborder', $data);
+        return Finance::transaction(function() use($DB,$trade_no,$sub_orders){
+            $order=Finance::row('SELECT status FROM pre_order WHERE trade_no=:trade FOR UPDATE',[':trade'=>$trade_no]);
+            if(!$order) throw new \RuntimeException('合单订单不存在');
+            $children=Finance::checked($DB->query('SELECT * FROM pre_suborder WHERE trade_no=:trade FOR UPDATE',[':trade'=>$trade_no]))->fetchAll(\PDO::FETCH_ASSOC);
+            // Replays after a child/parent completion may not delete or reset children.
+            if(!in_array((int)$order['status'],[0,4],true)) return false;
+            foreach($children as $child) if((int)$child['status']!==0 || (int)$child['settle']!==0) return false;
+            if($sub_orders!==null && !is_array($sub_orders)) throw new \RuntimeException('子订单格式错误');
+            Finance::checked($DB->update('order',['combine'=>1],['trade_no'=>$trade_no]));
+            if(!empty($sub_orders)){
+                $seen=[];
+                foreach($sub_orders as $data){
+                    if(!is_array($data) || empty($data['sub_trade_no']) || isset($seen[$data['sub_trade_no']])) throw new \RuntimeException('子订单编号错误或重复');
+                    $seen[$data['sub_trade_no']]=true;
+                }
+                Finance::checked($DB->delete('suborder',['trade_no'=>$trade_no]));
+                foreach($sub_orders as $data){
+                    $data['trade_no']=$trade_no;$data['status']=0;
+                    Finance::checked($DB->insert('suborder',$data));
+                }
             }
-        }
+            return true;
+        });
     }
 
     // 更新订单分账接收人
@@ -454,6 +521,8 @@ class Payment {
 
     //支付宝直付通确认结算
     public static function alipaydSettle($channel, $order){
+        $order = self::settlementOrder($order);
+        if ((int)$order['settle'] === 2) return true;
         $alipay_config = require(PLUGIN_ROOT.'alipayd/inc/config.php');
         $alipaySevice = new \Alipay\AlipayTradeService($alipay_config);
         if($order['combine'] == 1){
@@ -527,8 +596,19 @@ class Payment {
         }
     }
 
+    private static function settlementOrder($order){
+        global $DB;
+        if ($DB->db->inTransaction()) throw new Exception('上游结算不能位于数据库事务内');
+        $fresh = Finance::row('SELECT * FROM pre_order WHERE trade_no=:trade', [':trade'=>$order['trade_no']]);
+        if (!$fresh || (int)$fresh['status'] !== 1 || empty($fresh['api_trade_no'])) throw new Exception('本地订单未确认支付成功');
+        if ((int)$fresh['settle'] === 4 && empty($order['_settlement_claim'])) throw new Exception('结算结果待核对，禁止直接重试');
+        return array_merge($order, $fresh);
+    }
+
     //微信收付通确认结算
     public static function wxpaynpSettle($channel, $order){
+        $order = self::settlementOrder($order);
+        if ((int)$order['settle'] === 2) return true;
         $wechatpay_config = require(PLUGIN_ROOT.'/wxpaynp/inc/config.php');
         if($wechatpay_config['ecommerce']){
             if(!$order['profits']){
@@ -726,31 +806,49 @@ class Payment {
     //支付宝直付通&微信收付通延迟结算处理
     public static function settle_task(){
         global $DB;
-        $orders = $DB->getAll("SELECT A.*,B.plugin FROM pre_order A LEFT JOIN pre_channel B ON A.channel=B.id WHERE A.status=1 AND A.settle=1 AND A.addtime<DATE_SUB(NOW(), INTERVAL 24 HOUR) AND B.plugin in ('alipayd','wxpaynp') ORDER BY A.trade_no ASC LIMIT 10");
-        foreach($orders as $row){
+        if ($DB->db->inTransaction()) throw new \RuntimeException('结算任务不允许嵌套外层事务');
+        $orders = Finance::checked($DB->getAll("SELECT A.*,B.plugin FROM pre_order A LEFT JOIN pre_channel B ON A.channel=B.id WHERE A.status=1 AND A.settle=1 AND A.addtime<DATE_SUB(NOW(), INTERVAL 24 HOUR) AND B.plugin in ('alipayd','wxpaynp') ORDER BY A.trade_no ASC LIMIT 10"));
+        foreach ($orders as $row) {
             $trade_no = $row['trade_no'];
-            $channel = $row['subchannel'] > 0 ? \lib\Channel::getSub($row['subchannel']) : \lib\Channel::get($row['channel'], $DB->findColumn('user', 'channelinfo', ['uid'=>$row['uid']]));
-            if(!$channel) continue;
-            try{
-                if($row['plugin'] == 'alipayd'){
-                    self::alipaydSettle($channel, $row);
-                }elseif($row['plugin'] == 'wxpaynp'){
-                    self::wxpaynpSettle($channel, $row);
+            // Connection-scoped lock serializes workers without holding a DB transaction over HTTP.
+            $lock = 'epay_settle_'.hash('sha256', $trade_no);
+            $lock = substr($lock, 0, 64);
+            $got = Finance::checked($DB->query('SELECT GET_LOCK(:name,0)', [':name'=>$lock]))->fetchColumn();
+            if ((int)$got !== 1) continue;
+            try {
+                $fresh = Finance::row('SELECT * FROM pre_order WHERE trade_no=:trade', [':trade'=>$trade_no]);
+                if (!$fresh || (int)$fresh['status'] !== 1 || (int)$fresh['settle'] !== 1) continue;
+                $row = array_merge($row, $fresh);
+                $channel = $row['subchannel'] > 0 ? \lib\Channel::getSub($row['subchannel']) : \lib\Channel::get($row['channel'], $DB->findColumn('user', 'channelinfo', ['uid'=>$row['uid']]));
+                if (!$channel) continue;
+                // Durable in-flight/uncertain marker. A crash or post-gateway write failure
+                // must not let the scheduler blindly submit this settlement again.
+                $claimed = Finance::checked($DB->update('order', ['settle'=>4], ['trade_no'=>$trade_no, 'status'=>1, 'settle'=>1]));
+                if ($claimed !== 1) continue;
+                $row['_settlement_claim'] = true;
+                $gatewayError = null;
+                $target = 2;
+                try {
+                    $result = $row['plugin'] === 'alipayd' ? self::alipaydSettle($channel, $row) : self::wxpaynpSettle($channel, $row);
+                    if ($result === false || $result === null) {
+                        $gatewayError = new Exception('上游未确认结算成功');
+                        $target = 3;
+                    }
+                } catch (\Throwable $e) {
+                    // Timeout and a failed child-state write are indistinguishable from
+                    // remote success: retain the durable uncertain claim, never auto-replay.
+                    if (strpos($e->getMessage(), 'ALREADY_CONFIRM_SETTLE') === false) {
+                        $gatewayError = $e;
+                        $target = 4;
+                    }
                 }
-                $DB->update('order', ['settle'=>2], ['trade_no'=>$trade_no]);
-                echo $trade_no.' 结算成功<br/>';
-            }catch(Exception $e){
-                $errmsg = $e->getMessage();
-                if(strpos($errmsg, 'ALREADY_CONFIRM_SETTLE')){
-                    $DB->update('order', ['settle'=>2], ['trade_no'=>$trade_no]);
-                    echo $trade_no.' 结算成功<br/>';
-                    continue;
-                }
-                $DB->update('order', ['settle'=>3], ['trade_no'=>$trade_no]);
-                echo $trade_no.' 结算失败,'.$errmsg.'<br/>';
-                if($row['plugin'] == 'alipayd'){
-                    \lib\Payment::alipayd_settle_fail($channel, $row, $errmsg);
-                }
+                // A failed local write is not a gateway failure. Leave uncertain for reconciliation.
+                $changed = Finance::checked($DB->update('order', ['settle'=>$target], ['trade_no'=>$trade_no, 'status'=>1, 'settle'=>4]));
+                if ($changed !== 1 && $target !== 4) throw new \RuntimeException('结算本地状态未确认，需核对');
+                echo htmlspecialchars($trade_no, ENT_QUOTES, 'UTF-8').($gatewayError ? ' 结算失败<br/>' : ' 结算成功<br/>');
+                if ($gatewayError && $row['plugin'] === 'alipayd') self::alipayd_settle_fail($channel, $row, $gatewayError->getMessage());
+            } finally {
+                Finance::checked($DB->query('SELECT RELEASE_LOCK(:name)', [':name'=>$lock]));
             }
         }
     }
@@ -762,9 +860,15 @@ class Payment {
 
     public static function processSubOrders($trade_no, $sub_orders){
         global $DB;
-        foreach($sub_orders as $data){
-            $DB->update('suborder', ['status'=>1, 'api_trade_no'=>$data['api_trade_no']], ['sub_trade_no'=>$data['sub_trade_no']]);
-        }
+        return Finance::transaction(function() use($DB,$trade_no,$sub_orders){
+            if(!Finance::row('SELECT trade_no FROM pre_order WHERE trade_no=:trade FOR UPDATE',[':trade'=>$trade_no])) throw new \RuntimeException('合单订单不存在');
+            foreach($sub_orders as $data){
+                $child=Finance::row('SELECT * FROM pre_suborder WHERE trade_no=:trade AND sub_trade_no=:sub FOR UPDATE',[':trade'=>$trade_no,':sub'=>$data['sub_trade_no']]);
+                if(!$child)throw new \RuntimeException('合单子订单不存在');
+                if((int)$child['status']===0) Finance::checked($DB->update('suborder',['status'=>1,'api_trade_no'=>$data['api_trade_no']],['trade_no'=>$trade_no,'sub_trade_no'=>$data['sub_trade_no']]));
+            }
+            return true;
+        });
     }
 
     public static function refundSubOrder($sub_trade_no, $refundmoney = null){
@@ -774,6 +878,8 @@ class Payment {
 
     public static function updateSubOrderSettle($sub_trade_no, $settle){
         global $DB;
-        $DB->update('suborder', ['settle'=>$settle], ['sub_trade_no'=>$sub_trade_no]);
+        Finance::checked($DB->update('suborder', ['settle'=>$settle], ['sub_trade_no'=>$sub_trade_no]));
+        $row = Finance::row('SELECT settle FROM pre_suborder WHERE sub_trade_no=:trade', [':trade'=>$sub_trade_no]);
+        if (!$row || (int)$row['settle'] !== (int)$settle) throw new \RuntimeException('子订单结算状态未确认');
     }
 }

@@ -22,7 +22,7 @@ class Pay
         $value = trim((string)$value);
         if($value === '' || !is_url($value)) throw new Exception($name.'格式不正确');
         if(function_exists('epay_is_safe_outbound_url') && !epay_is_safe_outbound_url($value)) throw new Exception($name.'不安全');
-        return htmlspecialchars(daddslashes($value));
+        return $value;
     }
 
     private static function safeEnum($value, $allowed, $default=null){
@@ -63,18 +63,18 @@ class Pay
 
         if($userrow['pay']==2 && $conf['user_review']==1)sysmsg('商户未通过审核，无法支付！');
 
-        $type=isset($queryArr['type'])?trim(daddslashes($queryArr['type'])):'';
+        $type=isset($queryArr['type'])?trim((string)$queryArr['type']):'';
         $out_trade_no=self::safeToken($queryArr['out_trade_no'], '订单号(out_trade_no)');
         $notify_url=self::safeCallbackUrl($queryArr['notify_url'], '通知地址(notify_url)');
         $return_url=self::safeCallbackUrl($queryArr['return_url'], '回调地址(return_url)');
-        $name=htmlspecialchars(daddslashes($queryArr['name']));
+        $name=(string)$queryArr['name'];
         $money=self::safeMoney($queryArr['money']);
-        $sitename=urlencode(base64_encode(htmlspecialchars($queryArr['sitename'])));
-        $param=isset($queryArr['param'])?htmlspecialchars(daddslashes($queryArr['param'])):null;
+        $sitename=urlencode(base64_encode((string)$queryArr['sitename']));
+        $param=isset($queryArr['param'])?(string)$queryArr['param']:null;
         $channel_id=isset($queryArr['channel_id'])?intval($queryArr['channel_id']):null;
-        $cert_no=isset($queryArr['cert_no'])?htmlspecialchars($queryArr['cert_no']):null;
-        $cert_name=isset($queryArr['cert_name'])?htmlspecialchars($queryArr['cert_name']):null;
-        $min_age=isset($queryArr['min_age'])?daddslashes($queryArr['min_age']):null;
+        $cert_no=isset($queryArr['cert_no'])?(string)$queryArr['cert_no']:null;
+        $cert_name=isset($queryArr['cert_name'])?(string)$queryArr['cert_name']:null;
+        $min_age=isset($queryArr['min_age'])?(string)$queryArr['min_age']:null;
 
 
         if(empty($name))sysmsg('商品名称(name)不能为空');
@@ -178,7 +178,7 @@ class Pay
 
 
         if(empty($type)){
-            echo "<script>window.location.replace('/cashier.php?trade_no={$trade_no}&sitename={$sitename}');</script>";
+            echo '<script>window.location.replace('.json_encode('/cashier.php?trade_no='.rawurlencode($trade_no).'&sitename='.$sitename, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT).');</script>';
             exit;
         }
 
@@ -186,7 +186,7 @@ class Pay
         if($firstGetChannel){
             $submitData = \lib\Channel::submit($type, $userrow['uid'], $userrow['gid'], $money, $channel_id);
             if(!$submitData){
-                echo "<script>window.location.replace('/cashier.php?trade_no={$trade_no}&sitename={$sitename}&other=1');</script>";
+                echo '<script>window.location.replace('.json_encode('/cashier.php?trade_no='.rawurlencode($trade_no).'&sitename='.$sitename.'&other=1', JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT).');</script>';
                 exit;
             }
             if($userrow['mode']==1){ //订单加费模式
@@ -303,21 +303,21 @@ class Pay
 
         if($userrow['pay']==2 && $conf['user_review']==1)echojsonmsg('商户未通过审核，无法支付！');
 
-        $type=isset($queryArr['type'])?trim(daddslashes($queryArr['type'])):'';
+        $type=isset($queryArr['type'])?trim((string)$queryArr['type']):'';
         $out_trade_no=self::safeToken($queryArr['out_trade_no'], '订单号(out_trade_no)');
         $notify_url=self::safeCallbackUrl($queryArr['notify_url'], '通知地址(notify_url)');
         $return_url=!empty($queryArr['return_url'])?self::safeCallbackUrl($queryArr['return_url'], '回调地址(return_url)'):$notify_url;
-        $name=htmlspecialchars(daddslashes($queryArr['name']));
+        $name=(string)$queryArr['name'];
         $money=self::safeMoney($queryArr['money']);
-        $clientip=daddslashes($queryArr['clientip']);
+        $clientip=(string)$queryArr['clientip'];
         $device=isset($queryArr['device'])?self::safeEnum($queryArr['device'], ['pc','mobile','qq','wechat','alipay','app','jump'], 'pc'):'pc';
         if(empty($device))$device = 'pc';
         $sub_openid=$queryArr['sub_openid'];
         $sub_appid=$queryArr['sub_appid'];
         $is_applet=isset($queryArr['is_applet'])?intval($queryArr['is_applet']):0;
         $auth_code=$queryArr['auth_code'];
-        $sitename=urlencode(base64_encode(htmlspecialchars($queryArr['sitename'])));
-        $param=isset($queryArr['param'])?htmlspecialchars(daddslashes($queryArr['param'])):null;
+        $sitename=urlencode(base64_encode((string)$queryArr['sitename']));
+        $param=isset($queryArr['param'])?(string)$queryArr['param']:null;
         $channel_id=isset($queryArr['channel_id'])?intval($queryArr['channel_id']):null;
         $method=isset($queryArr['method'])?self::safeEnum($queryArr['method'], ['web','jump','jsapi','scan'], 'web'):'web'; //web/jump/jsapi/scan
         if($device == 'jump')$method = 'jump';
@@ -326,9 +326,9 @@ class Pay
             $mdevice=$device;
             $device='mobile';
         }
-        $cert_no=isset($queryArr['cert_no'])?htmlspecialchars($queryArr['cert_no']):null;
-        $cert_name=isset($queryArr['cert_name'])?htmlspecialchars($queryArr['cert_name']):null;
-        $min_age=isset($queryArr['min_age'])?daddslashes($queryArr['min_age']):null;
+        $cert_no=isset($queryArr['cert_no'])?(string)$queryArr['cert_no']:null;
+        $cert_name=isset($queryArr['cert_name'])?(string)$queryArr['cert_name']:null;
+        $min_age=isset($queryArr['min_age'])?(string)$queryArr['min_age']:null;
 
         if(empty($name))echojsonmsg('商品名称(name)不能为空');
         if(empty($type) && $method != 'scan')echojsonmsg('支付方式(type)不能为空');
@@ -583,7 +583,7 @@ class Pay
 		}elseif(!empty($queryArr['out_trade_no'])){
 			$out_trade_no=self::safeToken($queryArr['out_trade_no'], '订单号');
             $trade_no = $DB->findColumn('order', 'trade_no', ['out_trade_no'=>$out_trade_no, 'uid'=>$pid]);
-            if(!$trade_no) throw new Exception('当前订单不存在！');;
+            if(!$trade_no) throw new Exception('当前订单不存在！');
 		}else{
             throw new Exception('订单号不能为空');
 		}
@@ -635,7 +635,7 @@ class Pay
 		}elseif(!empty($queryArr['out_trade_no'])){
 			$out_trade_no=self::safeToken($queryArr['out_trade_no'], '订单号');
             $trade_no = $DB->findColumn('order', 'trade_no', ['out_trade_no'=>$out_trade_no, 'uid'=>$pid]);
-            if(!$trade_no) throw new Exception('当前订单不存在！');;
+            if(!$trade_no) throw new Exception('当前订单不存在！');
 		}else{
             throw new Exception('订单号不能为空');
 		}

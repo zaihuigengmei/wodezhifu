@@ -952,21 +952,30 @@ case 'groupbuy':
 		$endtime = null;
 	}
 	if($typeid==0){
-		if($money>$userrow['money'])exit('{"code":-1,"msg":"余额不足，请选择其他方式支付"}');
-		changeUserMoney($uid, $money, false, '购买会员');
-		changeUserGroup($uid, $gid, $endtime);
-
-		if($userrow['upid'] > 0){
-			$upgid = $DB->findColumn('user', 'gid', ['uid'=>$userrow['upid']]);
-			$groupconfig = getGroupConfig($upgid);
-			$conf_n = array_merge($conf, $groupconfig);
-			if($conf_n['invite_open'] == 1 && $conf_n['invite_groupbuy_rate'] > 0){
-				$invite_money = round($money * $conf_n['invite_groupbuy_rate'] / 100, 2);
-				if($invite_money > 0){
-					changeUserMoney($userrow['upid'], $invite_money, true, '邀请购买会员');
-				}
-			}
-		}
+        try {
+            $intent='groupbuy:'.hash('sha256',$uid.':'.$_POST['csrf_token']);
+            $payload=['uid'=>(int)$uid,'gid'=>$gid,'num'=>$num,'money'=>\lib\Finance::amount(\lib\Finance::cents($money))];
+            epay_business_once($intent,$payload,[$uid,$userrow['upid'] ?: $uid],function() use($DB,$uid,$gid,$num,$row,$money,$conf){
+                $fresh=\lib\Finance::row('SELECT * FROM pre_user WHERE uid=:uid FOR UPDATE',[':uid'=>$uid]);
+                if($gid==$fresh['gid'] && $fresh['endtime']===null) throw new \RuntimeException('已购买永久会员');
+                $endtime=null;
+                if($row['expire']>0){
+                    $months=$num*$row['expire'];
+                    $start=$gid==$fresh['gid'] && !empty($fresh['endtime']) ? strtotime($fresh['endtime']) : time();
+                    $endtime=date('Y-m-d',strtotime('+ '.$months.' month',$start));
+                }
+                \lib\Finance::change($uid,$money,false,'购买会员',null,true);
+                \lib\Finance::checked(changeUserGroup($uid,$gid,$endtime));
+                if($fresh['upid']>0){
+                    $upgid=$DB->findColumn('user','gid',['uid'=>$fresh['upid']]);
+                    $conf_n=array_merge($conf,getGroupConfig($upgid));
+                    if($conf_n['invite_open']==1 && $conf_n['invite_groupbuy_rate']>0){
+                        $invite_money=round($money*$conf_n['invite_groupbuy_rate']/100,2);
+                        if($invite_money>0)changeUserMoney($fresh['upid'],$invite_money,true,'邀请购买会员');
+                    }
+                }
+            });
+        } catch(\Throwable $e){ exit(json_encode(['code'=>-1,'msg'=>'购买失败：'.$e->getMessage()])); }
 
 		unset($_SESSION['csrf_token']);
 		$result = ['code'=>1, 'msg'=>'购买会员成功！'];
@@ -1176,6 +1185,10 @@ case 'recordList':
 break;
 case 'settleList':
 	[$sql, $params] = [" uid=:b211", [':b211'=>$uid]];
+    if(isset($_POST['transfer_status']) && is_scalar($_POST['transfer_status']) && in_array((string)$_POST['transfer_status'],['3','4'],true)){
+        $sql.=' AND transfer_status=:funds_transfer_status';
+        $params[':funds_transfer_status']=(int)$_POST['transfer_status'];
+    }
 	if(isset($_POST['dstatus']) && $_POST['dstatus']>-1) {
 		$dstatus = intval($_POST['dstatus']);
 		[$sql, $params] = [$sql." AND status=:b212", $params + [':b212'=>"{$dstatus}"]];

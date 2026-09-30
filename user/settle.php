@@ -27,7 +27,8 @@ include './head.php';
 			<div class="form-group">
 				<select name="dstatus" class="form-control"><option value="-1">全部状态</option><option value="0">状态待结算</option><option value="1">状态已完成</option><option value="2">状态正在结算</option><option value="3">状态结算失败</option></select>
 			</div>
-			<button class="btn btn-primary" type="submit"><i class="fa fa-search"></i> 搜索</button>
+			<select name="transfer_status" class="form-control"><option value="-1">全部付款状态</option><option value="3">付款待核对</option><option value="4">已取消并退回余额</option></select>
+<button class="btn btn-primary" type="submit"><i class="fa fa-search"></i> 搜索</button>
 			<a href="javascript:searchClear()" class="btn btn-default"><i class="fa fa-refresh"></i> 重置</a>
 		</form>
       <table id="listTable">
@@ -102,7 +103,9 @@ $(document).ready(function(){
 				field: 'status',
 				title: '状态',
 				formatter: function(value, row, index) {
-					if(value == '1'){
+					if(row.transfer_status == '3') return '<font color=orange>付款待核对</font>';
+                    if(row.transfer_status == '4') return '<font color=grey>已取消并退回余额</font>';
+                    if(value == '1'){
 						return '<font color=green>已完成</font>' + (row.jumpurl ? '<br/><a href="javascript:showQrcode(\''+row.jumpurl+'\')" class="btn btn-xs btn-success"><i class="fa fa-qrcode"></i> 确认收款</a>' : '');
 					}else if(value == '2'){
 						return '<font color=orange>正在结算</font>';

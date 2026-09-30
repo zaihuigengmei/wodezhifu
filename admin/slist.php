@@ -26,12 +26,14 @@ if($islogin==1){}else exit("<script language='javascript'>window.location.href='
   <div class="form-group">
 	<select name="dstatus" class="form-control"><option value="-1">全部状态</option><option value="0">待结算</option><option value="1">已完成</option><option value="2">正在结算</option><option value="3">结算失败</option></select>
   </div>
-  <button type="submit" class="btn btn-primary">搜索</button>
+  <select name="transfer_status" class="form-control"><option value="-1">全部付款状态</option><option value="3">付款待核对</option><option value="4">已取消并退回余额</option></select>
+<select name="transfer_status" class="form-control"><option value="-1">全部付款状态</option><option value="3">付款待核对</option><option value="4">已取消并退回余额</option></select>
+<button type="submit" class="btn btn-primary">搜索</button>
   <a href="settle.php" class="btn btn-success">批量结算</a>
   <a href="javascript:searchClear()" class="btn btn-default" title="刷新记录列表"><i class="fa fa-refresh"></i></a>
   <div class="btn-group" role="group">
 	<button type="button" class="btn btn-default dropdown-toggle" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">批量修改 <span class="caret"></span></button>
-	<ul class="dropdown-menu"><li><a href="javascript:operation(0)">待结算</a></li><li><a href="javascript:operation(1)">已完成</a></li><li><a href="javascript:operation(2)">正在结算</a></li><li><a href="javascript:operation(3)">结算失败</a></li><li><a href="javascript:operation(4)">删除记录</a></li></ul>
+	<ul class="dropdown-menu"><li><a href="javascript:operation(0)">待结算</a></li><li><a href="javascript:operation(1)">已完成</a></li><li><a href="javascript:operation(2)">正在结算</a></li><li><a href="javascript:operation(3)">结算失败</a></li><li><a href="javascript:operation(4)">取消并退回余额</a></li></ul>
   </div>
 </form>
 
@@ -128,7 +130,11 @@ $(document).ready(function(){
 				title: '状态',
 				events: {'click .show-qrcode': function(e, value, row){e.preventDefault(); showQrcode(row.jumpurl);}},
 				formatter: function(value, row, index) {
-					if(value == '1'){
+					if(row.transfer_status == '3') return '<font color=orange>付款待核对</font>';
+                    if(row.transfer_status == '4') return '<font color=grey>已取消并退回余额</font>';
+                    if(row.transfer_status == '3') return '<font color=orange>付款待核对</font>';
+                    if(row.transfer_status == '4') return '<font color=grey>已取消并退回余额</font>';
+                    if(value == '1'){
 						return '<font color=green>已完成</font>' + (row.jumpurl ? '<br/><a href="#" class="show-qrcode btn btn-xs btn-success"><i class="fa fa-qrcode"></i> 确认收款</a>' : '');
 					}else if(value == '2'){
 						return '<font color=orange>正在结算</font>';
@@ -143,7 +149,9 @@ $(document).ready(function(){
 				field: '',
 				title: '操作',
 				formatter: function(value, row, index) {
-					return '<select onChange="javascript:setStatus(\''+row.id+'\',this.value)" class=""><option selected>变更状态</option><option value="0">待结算</option><option value="1">已完成</option><option value="2">正在结算</option><option value="3">结算失败</option><option value="4">删除记录</option></select>';
+					if(row.transfer_no || row.transfer_status == '3' || row.transfer_status == '4' || row.status == '1') return '请核对原付款；不可手工改终态';
+                    if(row.transfer_no || row.transfer_status == '3' || row.transfer_status == '4' || row.status == '1') return '请核对原付款；不可手工改终态';
+                    return '<select onChange="javascript:setStatus(\''+row.id+'\',this.value)" class=""><option selected>变更状态</option><option value="0">待结算</option><option value="1">已完成</option><option value="2">正在结算</option><option value="3">结算失败</option><option value="4">取消并退回余额</option></select>';
 				}
 			},
 		],

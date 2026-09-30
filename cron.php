@@ -18,9 +18,12 @@ $cron_key = isset($_GET['key']) && is_string($_GET['key']) ? $_GET['key'] : '';
 if(!hash_equals((string)$conf['cronkey'], $cron_key))exit("监控密钥不正确");
 
 if($_GET['do']=='settle'){
-	$settle_time=getSetting('settle_time', true);
-	if(strtotime($settle_time)>=strtotime(date("Y-m-d").' 00:00:00'))exit('自动生成结算列表今日已完成');
-	$rs=$DB->query("SELECT * from pre_user where money>={$conf['settle_money']} and settle=1 and status=1 and account is not null and username is not null");
+	\lib\Finance::checked($DB->beginTransaction());
+    \lib\Finance::checked($DB->exec("INSERT IGNORE INTO pre_config(k,v) VALUES('settle_time','')"));
+    \lib\Finance::row("SELECT * FROM pre_config WHERE k='settle_time' FOR UPDATE");
+    $settle_time=getSetting('settle_time', true);
+	if(strtotime($settle_time)>=strtotime(date("Y-m-d").' 00:00:00')){ $DB->rollBack();exit('自动生成结算列表今日已完成'); }
+	$rs=$DB->query("SELECT * from pre_user where money>={$conf['settle_money']} and settle=1 and status=1 and account is not null and username is not null ORDER BY uid FOR UPDATE");
 	$i=0;
 	$allmoney=0;
 	while($row = $rs->fetch())
@@ -52,17 +55,19 @@ if($_GET['do']=='settle'){
 			$fee=round($row['money']*$settle_rate/100,2);
 			if(!empty($conf['settle_fee_min']) && $fee<$conf['settle_fee_min'])$fee=$conf['settle_fee_min'];
 			if(!empty($conf['settle_fee_max']) && $fee>$conf['settle_fee_max'])$fee=$conf['settle_fee_max'];
-			$realmoney=$row['money']-$fee;
+			$realmoney=number_format($row['money']-$fee,2,'.','');
 		}else{
 			$realmoney=$row['money'];
 		}
 		$data = ['uid'=>$row['uid'], 'type'=>$row['settle_id'], 'account'=>$row['account'], 'username'=>$row['username'], 'money'=>$row['money'], 'realmoney'=>$realmoney, 'addtime'=>'NOW()', 'status'=>0];
-		if($DB->insert('settle', $data)){
-			changeUserMoney($row['uid'], $row['money'], false, '自动结算');
+		if(\lib\Finance::checked($DB->insert('settle', $data))){
+            \lib\Finance::change($row['uid'],number_format($row['money'],2,'.',''),false,'自动结算','settle:'.$DB->lastInsertId(),true);
 			$allmoney+=$realmoney;
 		}
 	}
-	saveSetting('settle_time', $date);
+	\lib\Finance::checked($DB->update('config',['v'=>$date],['k'=>'settle_time']));
+    \lib\Finance::checked($DB->commit());
+    $CACHE->clear();
 	exit('自动生成结算列表成功 allmony='.$allmoney.' num='.$i);
 }
 elseif($_GET['do']=='order'){
@@ -157,7 +162,6 @@ elseif($_GET['do']=='order'){
 
 	$CACHE->save('order_'.$day, serialize($order_lastday), 604830);
 
-	saveSetting('order_time', $date);
 
 	$DB->exec("update pre_channel set daystatus=0");
 
@@ -172,13 +176,16 @@ elseif($_GET['do']=='order'){
 				if($conf_n['invite_open'] == 1 && !empty($conf_n['invite_rate'])){
 					$invite_money = round($row['money'] * $conf_n['invite_rate'] / 100, 2);
 					if($invite_money > 0){
-						changeUserMoney($upid, $invite_money, true, '邀请返现', $row['uid']);
+                        epay_business_once('invite:'.$lastday.':'.$row['uid'],['day'=>$lastday,'uid'=>(int)$row['uid'],'upid'=>(int)$upid,'money'=>\lib\Finance::amount(\lib\Finance::cents($invite_money))],[$upid],function() use($upid,$invite_money,$row,$lastday){
+                            changeUserMoney($upid,$invite_money,true,'邀请返现',$lastday.':'.$row['uid']);
+                        });
 					}
 				}
 			}
 		}
 	}
 
+    saveSetting('order_time', $date); // only after every durable cashback receipt commits
 	$expire_users = $DB->getAll("SELECT uid,gid,status,endtime FROM pre_user WHERE gid>0 AND endtime>0 AND endtime<NOW()");
 	foreach($expire_users as $row){
 		$group = $DB->getRow("SELECT * FROM pre_group WHERE gid='{$row['gid']}'");
@@ -351,52 +358,34 @@ elseif($_GET['do']=='plugin'){
 elseif($_GET['do']=='transfer'){
 	if(!$conf['auto_settle_money']) exit('未开启自动结算转账功能');
 	if(!$conf['transfer_alipay']) exit('未设置支付宝转账接口通道');
-	$payee_err_code = [ //收款方原因导致的失败编码
-		'PAYEE_NOT_EXIST','PAYEE_ACCOUNT_STATUS_ERROR','CARD_BIN_ERROR','PAYEE_CARD_INFO_ERROR','PERM_AML_NOT_REALNAME_REV','PAYEE_USER_INFO_ERROR','PAYEE_ACC_OCUPIED','PERMIT_NON_BANK_LIMIT_PAYEE','PAYEE_TRUSTEESHIP_ACC_OVER_LIMIT','PAYEE_ACCOUNT_NOT_EXSIT','PAYEE_USERINFO_STATUS_ERROR','TRUSTEESHIP_RECIEVE_QUOTA_LIMIT','EXCEED_LIMIT_UNRN_DM_AMOUNT','INVALID_CARDNO','RELEASE_USER_FORBBIDEN_RECIEVE','PAYEE_USER_TYPE_ERROR','PAYEE_NOT_RELNAME_CERTIFY','PERMIT_LIMIT_PAYEE',
-
-		'OPENID_ERROR','NAME_MISMATCH','V2_ACCOUNT_SIMPLE_BAN','MONEY_LIMIT','EXCEED_PAYEE_ACCOUNT_LIMIT','PAYEE_ACCOUNT_ABNORMAL','APPID_OR_OPENID_ERR',
-
-		'REALNAME_CHECK_ERROR','RE_USER_NAME_CHECK_ERROR','ERR_TJ_BLACK','USER_FROZEN','TRANSFER_FAIL','TRANSFER_FEE_LIMIT_ERROR',
-
-		'ACCOUNT_FROZEN','REAL_NAME_CHECK_FAIL','NAME_NOT_CORRECT','OPENID_INVALID','TRANSFER_QUOTA_EXCEED','DAY_RECEIVED_QUOTA_EXCEED','MONTH_RECEIVED_QUOTA_EXCEED','DAY_RECEIVED_COUNT_EXCEED','ID_CARD_NOT_CORRECT','ACCOUNT_NOT_EXIST','TRANSFER_RISK','REALNAME_ACCOUNT_RECEIVED_QUOTA_EXCEED','RECEIVE_ACCOUNT_NOT_PERMMIT','PAYEE_ACCOUNT_ABNORMAL','BLOCK_B2C_USERLIMITAMOUNT_BSRULE_MONTH','BLOCK_B2C_USERLIMITAMOUNT_MONTH',
-	];
-
-	$money = $conf['auto_settle_money']; //商户超过此金额自动结算
-	$success=0;
-	$list = $DB->getAll("SELECT * FROM pre_user WHERE status=1 AND settle=1 AND settle_id=1 AND money>'$money' order by uid desc limit 5");
-	foreach($list as $row){
-		$settle_rate = $conf['settle_rate'];
-		$group = getGroupConfig($row['gid']);
-		if(isset($group['settle_open']) && $group['settle_open'] == 2) continue;
-		if(isset($group['settle_rate']) && $group['settle_rate']!=='' && $group['settle_rate']!==null) $settle_rate = $group['settle_rate'];
-		if($settle_rate>0){
-			$fee=round($row['money']*$settle_rate/100,2);
-			if(!empty($conf['settle_fee_max']) && $fee>$conf['settle_fee_max'])$fee=$conf['settle_fee_max'];
-			$realmoney=$row['money']-$fee;
-		}else{
-			$realmoney=$row['money'];
-		}
-		$out_biz_no = date("YmdHis").rand(11111,99999);
-		$channel = \lib\Channel::get($conf['transfer_alipay']);
-		$result = transfer_do('alipay', $channel, $out_biz_no, $row['account'], $row['username'], $realmoney);
-		if($result['code']==0){
-			$data = ['uid'=>$row['uid'], 'type'=>$row['settle_id'], 'account'=>$row['account'], 'username'=>$row['username'], 'money'=>$row['money'], 'realmoney'=>$realmoney, 'addtime'=>'NOW()', 'endtime'=>'NOW()', 'status'=>1, 'transfer_no'=>$out_biz_no, 'transfer_channel'=>$conf['transfer_alipay'], 'transfer_status'=>1, 'transfer_result'=>$result["orderid"], 'transfer_date'=>$result["paydate"]];
-			if($DB->insert('settle', $data)){
-				$success++;
-				changeUserMoney($row['uid'], $row['money'], false, '自动结算');
-				echo '商户'.$row['uid'].'成功结算'.$realmoney.'元，交易号：'.$result["orderid"].'<br/>';
-			}else{
-				echo '商户'.$row['uid'].'成功结算'.$realmoney.'元，但记录插入失败<br/>';
-			}
-		}else{
-			echo '商户'.$row['uid'].'结算'.$realmoney.'元失败：'.$result['msg'].'<br/>';
-			if(!in_array($result['errcode'], $payee_err_code)){
-				$DB->exec("UPDATE pre_channel SET status=0 WHERE id='{$channel['id']}'");
-				echo '已关闭通道:'.$channel['name'].'<br/>';
-				$mail_name = $conf['mail_recv']?$conf['mail_recv']:$conf['mail_name'];
-				send_mail($mail_name,$conf['sitename'].' - 支付通道自动关闭提醒','尊敬的管理员：支付通道“'.$channel['name'].'”因自动结算转账失败，已被系统自动关闭！<br/>----------<br/>'.$conf['sitename'].'<br/>'.date('Y-m-d H:i:s'));
-			}
-		}
-	}
-	echo '成功结算'.$success.'个商户<br/>';
+    $success=0;
+    $list=$DB->getAll('SELECT uid FROM pre_user WHERE status=1 AND settle=1 AND settle_id=1 AND money>:m ORDER BY uid DESC LIMIT 5',[':m'=>$conf['auto_settle_money']]);
+    foreach($list as $candidate){
+        try {
+            $id=\lib\Finance::transaction(function() use($DB,$conf,$candidate){
+                $row=\lib\Finance::row('SELECT * FROM pre_user WHERE uid=:u FOR UPDATE',[':u'=>$candidate['uid']]);
+                if(!$row || !$row['status'] || !$row['settle'] || $row['money']<=$conf['auto_settle_money'])return null;
+                // Do not create a new payout while a prior external intent is uncertain.
+                if($DB->getColumn('SELECT COUNT(*) FROM pre_settle WHERE uid=:u AND transfer_status=3',[':u'=>$row['uid']]))return null;
+                $group=getGroupConfig($row['gid']);
+                if(isset($group['settle_open']) && $group['settle_open']==2)return null;
+                $rate=$group['settle_rate']??$conf['settle_rate'];
+                $fee=round($row['money']*$rate/100,2);
+                if(!empty($conf['settle_fee_max']) && $fee>$conf['settle_fee_max'])$fee=$conf['settle_fee_max'];
+                $real=number_format($row['money']-$fee,2,'.','');
+                if(\lib\Finance::cents($real)<=0)throw new \RuntimeException('结算净额无效');
+                \lib\Finance::checked($DB->insert('settle',['uid'=>$row['uid'],'type'=>1,'account'=>$row['account'],'username'=>$row['username'],'money'=>$row['money'],'realmoney'=>$real,'addtime'=>'NOW()','status'=>0]));
+                $id=$DB->lastInsertId();
+                \lib\Finance::change($row['uid'],$row['money'],false,'自动结算','settle:'.$id,true);
+                return $id;
+            });
+            if(!$id)continue;
+            $channel=\lib\Channel::get($conf['transfer_alipay']);
+            if(!$channel)throw new \RuntimeException('转账通道不存在');
+            $r=\lib\Transfer::settlePay($id,'alipay',$channel);
+            if($r['code']==0 && ($r['status']??0)==1)$success++;
+            echo '结算申请'.$id.' '.htmlspecialchars($r['msg']??'已提交，请查询原交易',ENT_QUOTES,'UTF-8').'<br/>';
+        }catch(\Throwable $e){echo '结算未完成，请核对，禁止重复付款<br/>';}
+    }
+    echo '确认到账'.$success.'个商户<br/>';
 }

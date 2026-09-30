@@ -4,8 +4,8 @@ if($islogin==1){}else exit("<script language='javascript'>window.location.href='
 
 // Reauthorize each sensitive operation against the factor currently stored on the server.
 function verify_current_totp($conf, $submitted){
-	if($conf['totp_open'] != 1) return true;
-	if(empty($conf['totp_secret'])){
+	if(!epay_totp_enabled($conf)) return true;
+	if(!epay_totp_secret_valid($conf['totp_secret'] ?? null)){
 		echojsonmsg('当前动态口令配置异常，请联系管理员');
 		return false;
 	}
@@ -35,7 +35,23 @@ function verify_current_totp($conf, $submitted){
 	return true;
 }
 
+function save_totp_factor($secret, $enabled){
+	global $DB, $CACHE;
+	try {
+		if($DB->beginTransaction() === false) return false;
+		// Store both fields in one statement, not a partially applied two-write flow.
+		if($DB->exec('REPLACE INTO pre_config (k,v) VALUES (:secret_key,:secret),(:open_key,:enabled)', [':secret_key'=>'totp_secret', ':secret'=>$secret, ':open_key'=>'totp_open', ':enabled'=>(string)$enabled]) === false) throw new RuntimeException('write');
+		if($DB->commit() === false) throw new RuntimeException('commit');
+		return $CACHE->clear() !== false;
+	} catch(Throwable $e){
+		try { $DB->rollBack(); } catch(Throwable $ignored) {}
+		return false;
+	}
+}
+
 if(isset($_POST['action'])){
+	header('Content-Type: application/json; charset=UTF-8');
+	header('Cache-Control: no-store');
 	if(!$islogin) exit(json_encode(['code'=>-1, 'msg'=>'未登录']));
 	if(!checkRefererHost()) exit(json_encode(['code'=>403, 'msg'=>'Forbidden']));
 	csrf_check_json('admin');
@@ -47,15 +63,12 @@ if(isset($_POST['action'])){
 			$totp->setLabel($conf['admin_user']);
 			$totp->setIssuer($conf['sitename']);
 			$secret = $totp->getSecret();
-			$ticket = null;
-			if($conf['totp_open'] == 1){
-				$ticket = bin2hex(random_bytes(32));
-				$_SESSION['totp_reset_ticket'] = [
-					'token' => $ticket, 'secret_hash' => hash('sha256', $secret),
-					'old_hash' => hash('sha256', (string)$conf['totp_secret']),
-					'expires' => time() + 180
-				];
-			}
+			$ticket = bin2hex(random_bytes(32));
+			$_SESSION['totp_reset_ticket'] = [
+				'token' => $ticket, 'secret_hash' => hash('sha256', $secret),
+				'old_hash' => epay_admin_session_digest($conf), 'attempts'=>0,
+				'expires' => time() + 180
+			];
 			echojson(['code' => 0, 'data' => ['secret' => $secret, 'qrcode' => $totp->getProvisioningUri(), 'ticket' => $ticket]]);
 		} catch (Exception $e) {
 			echojsonmsg('生成动态口令失败');
@@ -63,19 +76,18 @@ if(isset($_POST['action'])){
 	}elseif($_POST['action'] == 'bind'){
 		$secret = is_string($_POST['secret'] ?? null) ? trim($_POST['secret']) : '';
 		$code = is_string($_POST['code'] ?? null) ? trim($_POST['code']) : '';
-		if($conf['totp_open'] == 1){
-			$pending = $_SESSION['totp_reset_ticket'] ?? null;
-			$submitted = $_POST['reset_ticket'] ?? null;
-			if(!is_array($pending) || !is_string($submitted) || !is_string($secret) ||
-				($pending['expires'] ?? 0) < time() ||
-				!hash_equals((string)($pending['token'] ?? ''), $submitted) ||
-				!hash_equals((string)($pending['secret_hash'] ?? ''), hash('sha256', $secret)) ||
-				!hash_equals((string)($pending['old_hash'] ?? ''), hash('sha256', (string)$conf['totp_secret']))){
-				echojsonmsg('重置验证已失效，请重新验证当前动态口令');
-			}
-			unset($_SESSION['totp_reset_ticket']);
+		$pending = $_SESSION['totp_reset_ticket'] ?? null;
+		$submitted = $_POST['reset_ticket'] ?? null;
+		if(!is_array($pending) || !is_string($submitted) || !is_string($secret) ||
+			($pending['expires'] ?? 0) < time() ||
+			!hash_equals((string)($pending['token'] ?? ''), $submitted) ||
+			!hash_equals((string)($pending['secret_hash'] ?? ''), hash('sha256', $secret)) ||
+			!hash_equals((string)($pending['old_hash'] ?? ''), epay_admin_session_digest($conf)) ||
+			($pending['attempts'] ?? 0) >= 5 || !preg_match('/^[A-Z2-7]{32}$/D', $secret)){
+			echojsonmsg('重置验证已失效，请重新验证当前动态口令');
 		}
-		if(empty($secret) || empty($code)){
+		$_SESSION['totp_reset_ticket']['attempts'] = ($pending['attempts'] ?? 0) + 1;
+		if(!preg_match('/^[0-9]{6}$/D', $code)){
 			echojsonmsg('参数不完整');
 		}
 		try {
@@ -86,15 +98,15 @@ if(isset($_POST['action'])){
 		} catch (Exception $e) {
 			echojsonmsg('动态口令验证失败');
 		}
-		saveSetting('totp_open', 1);
-		saveSetting('totp_secret', $secret);
-		$CACHE->clear();
+		if(!save_totp_factor($secret, 1)) echojsonmsg('保存动态口令失败，请重新登录检查配置');
+		unset($_SESSION['totp_reset_ticket'], $_SESSION['admin_totp_challenge']);
+		epay_delete_cookie('admin_token', '/admin');
 		echojson(['code' => 0, 'msg' => 'TOTP绑定成功']);
 	}elseif($_POST['action'] == 'close'){
 		if(!verify_current_totp($conf, $_POST['current_code'] ?? null)) exit;
-		saveSetting('totp_open', 0);
-		saveSetting('totp_secret', '');
-		$CACHE->clear();
+		if(!save_totp_factor('', 0)) echojsonmsg('保存动态口令失败，请重新登录检查配置');
+		unset($_SESSION['totp_reset_ticket'], $_SESSION['admin_totp_challenge']);
+		epay_delete_cookie('admin_token', '/admin');
 		echojson(['code' => 0, 'msg' => 'TOTP已关闭']);
 	}else{
 		echojsonmsg('参数错误');
@@ -104,26 +116,13 @@ if(isset($_POST['action'])){
 $title='TOTP二次验证配置';
 include './head.php';
 
-$callback_url = $siteurl.'wework.php';
-
-$errmsg = $CACHE->read('wxkferrmsg');
-if($errmsg){
-	$arr = @unserialize($errmsg, ['allowed_classes'=>false]) ?: [];
-	$errmsg = $arr['time'].' - '.$arr['errmsg'];
-}
-
-$account_list = $DB->getAll("SELECT A.* FROM pre_wxkfaccount A LEFT JOIN pre_wework B ON A.wid=B.id WHERE B.status=1");
-$account_select = '<option value="0">多客服账号轮询</option>';
-foreach($account_list as $row){
-	$account_select .= '<option value="'.$row['id'].'">'.$row['openkfid'].' - '.$row['name'].'</option>';
-}
 ?>
   <div class="container" style="padding-top:70px;">
     <div class="col-xs-12 col-sm-10 col-lg-8 center-block" style="float: none;">
 <div class="panel panel-primary">
 <div class="panel-heading"><h3 class="panel-title">TOTP二次验证</h3></div>
 <div class="panel-body">
-  <form onsubmit="return saveAccount(this)" method="post" class="form" role="form">
+  <form onsubmit="return false" method="post" class="form" role="form">
 	<div class="form-group">
 		<div class="input-group">
 			<?php if($conf['totp_open'] == 1){ ?>
@@ -161,7 +160,7 @@ foreach($account_list as $row){
 					<p>当前动态口令已在上一步验证。请填写新验证器显示的口令。</p>
 					<?php } ?>
 					<div class="form-group mt-4">
-						<div class="input-group"><input type="number" class="form-control input-lg" name="code" id="code" value="" placeholder="填写动态口令" autocomplete="off" required><div class="input-group-btn"><input type="submit" name="submit" value="完成绑定" class="btn btn-success btn-lg btn-block"/></div></div>
+						<div class="input-group"><input type="text" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" class="form-control input-lg" name="code" id="code" value="" placeholder="填写动态口令" autocomplete="off" required><div class="input-group-btn"><input type="submit" name="submit" value="完成绑定" class="btn btn-success btn-lg btn-block"/></div></div>
 					</div>
 				</form>
 			</div>
@@ -175,8 +174,10 @@ foreach($account_list as $row){
 <script src="<?php echo $cdnpublic?>clipboard.js/1.7.1/clipboard.min.js"></script>
 <script>
 var commonData = {secret:null,qrcode:null,resetTicket:null};
+var totpInFlight = false;
 var totpEnabled = <?php echo $conf['totp_open'] == 1 ? 'true' : 'false'; ?>;
 function open_totp(){
+	if(totpInFlight) return false;
 	if(!commonData.qrcode || !commonData.secret){
 		if(totpEnabled){
 			layer.prompt({title:'请输入当前验证器的动态口令以重置', formType:0}, function(currentCode, promptIndex){
@@ -193,9 +194,12 @@ function open_totp(){
 	}
 }
 function generate_totp(currentCode){
+	if(totpInFlight) return false;
+	totpInFlight = true;
 	var ii = layer.load(2, {shade:[0.1,'#fff']});
 	$.post('?', {action:'generate', current_code:currentCode}, function(res){
 		layer.close(ii);
+		totpInFlight = false;
 		if(res.code == 0){
 			commonData.secret = res.data.secret;
 			commonData.qrcode = res.data.qrcode;
@@ -212,13 +216,14 @@ function generate_totp(currentCode){
 				$('#modal-totp').modal('show');
 				$("#code").focus();
 			}else{
-				layer.alert(res.msg, {icon: 2});
+				layer.alert(res.msg || '操作失败，请重试', {icon: 2});
 			}
-		});
+		}, 'json').fail(function(){ totpInFlight=false; layer.close(ii); layer.alert('请求失败，请重试', {icon:2}); });
 }
 function bind_totp(){
+	if(totpInFlight) return false;
 	var code = $("#code").val();
-	if(totpEnabled && !commonData.resetTicket){
+	if(!commonData.secret || !commonData.resetTicket){
 		layer.msg('请先验证当前动态口令', {icon: 2});
 		return false;
 	}
@@ -227,6 +232,8 @@ function bind_totp(){
 		return false;
 	}
 	var ii = layer.load(2, {shade:[0.1,'#fff']});
+	totpInFlight = true;
+	$('#form-totp :submit').prop('disabled', true);
 	$.post('?', {action:'bind', secret:commonData.secret, code:code, reset_ticket:commonData.resetTicket}, function(res){
 		layer.close(ii);
 		if(res.code == 0){
@@ -234,19 +241,25 @@ function bind_totp(){
 				window.location.reload();
 			});
 		}else{
+			totpInFlight = false;
+			$('#form-totp :submit').prop('disabled', false);
 			commonData.resetTicket = null;
 			commonData.secret = null;
 			commonData.qrcode = null;
+			$('#modal-totp').modal('hide');
 			layer.alert(res.msg || '绑定失败，请重新验证', {icon: 2});
 		}
-	});
+	}, 'json').fail(function(){ totpInFlight=false; $('#form-totp :submit').prop('disabled', false); layer.close(ii); layer.alert('请求失败，请重试', {icon:2}); });
 	return false;
 }
 function close_totp(){
+	if(totpInFlight) return false;
 	layer.prompt({title:'请输入当前验证器的动态口令以关闭', formType:0}, function(currentCode, promptIndex){
 		if(!/^[0-9]{6}$/.test(currentCode)) return layer.msg('当前动态口令格式错误', {icon:2});
 		layer.close(promptIndex);
 		var ii = layer.load(2, {shade:[0.1,'#fff']});
+		if(totpInFlight) return;
+		totpInFlight = true;
 		$.post('?', {action: 'close', current_code:currentCode}, function(res){
 			layer.close(ii);
 			if(res.code == 0){
@@ -254,9 +267,10 @@ function close_totp(){
 					window.location.reload();
 				});
 			}else{
-				layer.alert(res.msg, {icon: 2});
+				totpInFlight = false;
+				layer.alert(res.msg || '操作失败，请重试', {icon: 2});
 			}
-		});
+		}, 'json').fail(function(){totpInFlight=false;layer.close(ii);layer.alert('请求失败，请重试', {icon:2});});
 	});
 }
 $(document).ready(function(){

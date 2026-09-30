@@ -42,7 +42,7 @@ include './head.php';
 				<select name="paytype" class="form-control"><option value="">所有付款方式</option><option value="alipay">支付宝</option><option value="wxpay">微信</option><option value="qqpay">QQ钱包</option><option value="bank">银行卡</option></select>
 			</div>
 			<div class="form-group">
-				<select name="dstatus" class="form-control"><option value="-1">全部状态</option><option value="0">正在处理</option><option value="1">转账成功</option><option value="2">转账失败</option><option value="3">待处理</option></select>
+				<select name="dstatus" class="form-control"><option value="-1">全部状态</option><option value="0">正在处理</option><option value="1">转账成功</option><option value="2">转账失败</option><option value="3">待处理</option><option value="4">待领取</option><option value="5">付款待核对</option><option value="6">撤销待核对</option></select>
 			</div>
 			<button class="btn btn-primary" type="submit"><i class="fa fa-search"></i> 搜索</button>
 			<a href="javascript:searchClear()" class="btn btn-default"><i class="fa fa-refresh"></i> 重置</a>
@@ -103,6 +103,13 @@ include './head.php';
 <script src="../assets/js/bootstrap-table-page-jump-to.min.js"></script>
 <script src="../assets/js/custom.js"></script>
 <script>
+function escHtml(value){
+    return String(value == null ? '' : value).replace(/[&<>"']/g, function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});
+}
+function uiJs(value){
+    return escHtml(String(value == null ? '' : value).replace(/\\/g,'\\\\').replace(/%/g,'\\u0025').replace(/'/g,'\\u0027').replace(/"/g,'\\u0022').replace(/</g,'\\u003c').replace(/>/g,'\\u003e').replace(/&/g,'\\u0026').replace(/\r/g,'\\r').replace(/\n/g,'\\n').replace(/\u2028/g,'\\u2028').replace(/\u2029/g,'\\u2029'));
+}
+
 $(document).ready(function(){
 	updateToolbar();
 	const defaultPageSize = 30;
@@ -119,7 +126,7 @@ $(document).ready(function(){
 				field: 'biz_no',
 				title: '交易号/第三方交易号',
 				formatter: function(value, row, index) {
-					return '<b>'+value+'</b><br/>'+row.pay_order_no;
+					return '<b>'+escHtml(value)+'</b><br/>'+escHtml(row.pay_order_no);
 				}
 			},
 			{
@@ -136,44 +143,46 @@ $(document).ready(function(){
 					}else if(value == 'bank'){
 						typename='<img src="/assets/icon/bank.ico" width="16" onerror="this.style.display=\'none\'">银行卡';
 					}
-					return typename+'<br/>'+(row.desc?'<font color="#bf7fef">'+row.desc+'</font>':'')+'';
+					return typename+'<br/>'+(row.desc?'<font color="#bf7fef">'+escHtml(row.desc)+'</font>':'')+'';
 				}
 			},
 			{
 				field: 'account',
 				title: '付款账号/姓名',
 				formatter: function(value, row, index) {
-					return ''+value+'<br/>'+row.username+'';
+					return ''+escHtml(value)+'<br/>'+escHtml(row.username)+'';
 				}
 			},
 			{
 				field: 'money',
 				title: '付款金额/花费金额',
 				formatter: function(value, row, index) {
-					return '¥<b>'+value+'</b><br/>¥<b>'+row.costmoney+'</b>';
+					return '¥<b>'+escHtml(value)+'</b><br/>¥<b>'+escHtml(row.costmoney)+'</b>';
 				}
 			},
 			{
 				field: 'paytime',
 				title: '提交时间/付款时间',
 				formatter: function(value, row, index) {
-					return (row.addtime ? row.addtime : value)+'<br/>'+value;
+					return escHtml(row.addtime ? row.addtime : value)+'<br/>'+escHtml(value);
 				}
 			},
 			{
 				field: 'status',
 				title: '状态',
+                events: {'click .transfer-qr': function(e, value, row){ e.preventDefault(); showQrcode(row.jumpurl, row.type); }},
 				formatter: function(value, row, index) {
+					if(value == '5' || value == '6') return '<a href="javascript:queryStatus(\''+uiJs(row.biz_no)+'\')"><font color=orange>'+ (value == '5' ? '付款待核对' : '撤销待核对')+'</font></a>';
 					if(value == '1'){
 						return '<font color=green>转账成功</font>';
 					}else if(value == '2'){
-						return '<a href="javascript:showResult(\''+row.biz_no+'\')" title="点此查看失败原因"><font color=red>转账失败</font></a>';
+						return '<a href="javascript:showResult(\''+uiJs(row.biz_no)+'\')" title="点此查看失败原因"><font color=red>转账失败</font></a>';
 					}else if(value == '3'){
 						return '<font color=blue>待处理</font>';
 					}else if(value == '4'){
-						return '<font color=#26a7e8>待领取</font><br/><a href="javascript:showQrcode(\''+row.jumpurl+'\',\''+row.type+'\')" class="btn btn-xs btn-success"><i class="fa fa-qrcode"></i> 红包码</a>';
+						return '<font color=#26a7e8>待领取</font><br/><a href="#" class="btn btn-xs btn-success transfer-qr"><i class="fa fa-qrcode"></i> 红包码</a>';
 					}else{
-						return '<a href="javascript:queryStatus(\''+row.biz_no+'\')" title="点此查询转账状态"><font color=orange>正在处理</font></a>' + (row.jumpurl ? '<br/><a href="javascript:showQrcode(\''+row.jumpurl+'\',\''+row.type+'\')" class="btn btn-xs btn-success"><i class="fa fa-qrcode"></i> 确认收款</a>' : '');
+						return '<a href="javascript:queryStatus(\''+uiJs(row.biz_no)+'\')" title="点此查询转账状态"><font color=orange>正在处理</font></a>' + (row.jumpurl ? '<br/><a href="#" class="btn btn-xs btn-success transfer-qr"><i class="fa fa-qrcode"></i> 确认收款</a>' : '');
 					}
 				}
 			},
@@ -192,12 +201,12 @@ function statistics(){
             if(data.code == 0){
                 var element = $('#modal-statistics');
                 var htmlContent = $("#statistics").html().replace(/\{(\w+)\}/g, function (match, key) {
-                    return data.data[key] || '';
+                    return escHtml(data.data[key] == null ? '' : data.data[key]);
                 });
                 element.find('.modal-body').html(htmlContent);
                 element.modal('show');
             }else{
-                layer.alert(data.msg);
+                layer.alert(escHtml(data.msg));
             }
         },
         error:function(data){
@@ -215,9 +224,9 @@ function showResult(biz_no) {
 		success : function(data) {
 			layer.close(ii);
 			if(data.code == 0){
-				layer.alert(data.msg, {icon:0, title:'失败原因', shadeClose:true});
+				layer.alert(escHtml(data.msg), {icon:0, title:'失败原因', shadeClose:true});
 			}else{
-				layer.alert(data.msg, {icon:2});
+				layer.alert(escHtml(data.msg), {icon:2});
 			}
 		},
 		error:function(data){
@@ -237,9 +246,9 @@ function queryStatus(biz_no) {
 			layer.close(ii);
 			if(data.code == 0){
 				searchSubmit();
-				layer.alert(data.msg, {title:'查询结果'});
+				layer.alert(escHtml(data.msg), {title:'查询结果'});
 			}else{
-				layer.alert(data.msg, {icon:2, title:'查询失败'});
+				layer.alert(escHtml(data.msg), {icon:2, title:'查询失败'});
 			}
 		},
 		error:function(data){
@@ -272,10 +281,10 @@ function getProof(biz_no) {
 					var proofMessage = $('<div>').text('获取转账凭证成功！').append(proofLink).html();
 					layer.alert(proofMessage, {icon:1, title:'获取凭证'});
 				}else{
-					layer.alert(data.msg, {icon:1, title:'获取凭证'});
+					layer.alert(escHtml(data.msg), {icon:1, title:'获取凭证'});
 				}
 			}else{
-				layer.alert(data.msg, {icon:2, title:'获取失败'});
+				layer.alert(escHtml(data.msg), {icon:2, title:'获取失败'});
 			}
 		},
 		error:function(data){
