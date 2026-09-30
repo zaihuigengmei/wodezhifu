@@ -5,7 +5,7 @@ $certify_id = isset($_GET['certtoken'])?$_GET['certtoken']:exit('param is error'
 
 $userrow=$DB->getRow("SELECT * FROM pre_user WHERE uid='{$uid}' limit 1");
 if(!$userrow)sysmsg('uid不存在');
-if($certify_id!=$userrow['certtoken'])sysmsg('certtoken不正确');
+if(!is_string($certify_id) || $certify_id === '' || strlen($certify_id)>256 || !is_string($userrow['certtoken']) || $userrow['certtoken'] === '' || !hash_equals($userrow['certtoken'], $certify_id))sysmsg('certtoken不正确');
 
 $channel = \lib\Channel::get($conf['cert_channel']);
 if(!$channel)sysmsg('当前实名认证通道信息不存在');

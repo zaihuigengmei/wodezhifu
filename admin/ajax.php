@@ -239,12 +239,12 @@ case 'testproxy':
 	$conf['proxy_pwd'] = trim($_POST['proxy_pwd']);
 	$conf['proxy_type'] = $_POST['proxy_type'];
 	try{
-		check_proxy('https://dl.amh.sh/ip.htm');
+		if(check_proxy('https://dl.amh.sh/ip.htm') !== true){ throw new Exception('代理检测未确认成功；当前安全策略禁止配置代理。'); }
 	}catch(Exception $e){
 		try{
-			check_proxy('https://myip.ipip.net/');
+			if(check_proxy('https://myip.ipip.net/') !== true){ throw new Exception('代理检测未确认成功；当前安全策略禁止配置代理。'); }
 		}catch(Exception $e){
-			exit('{"code":-1,"msg":"'.$e->getMessage().'"}');
+			exit(json_encode(['code'=>-1,'msg'=>$e->getMessage()], JSON_UNESCAPED_UNICODE));
 		}
 	}
 	exit('{"code":0}');

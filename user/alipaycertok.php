@@ -64,7 +64,7 @@ if($conf['cert_open'] == 1){ //支付宝身份验证
 	$AuthToken = isset($_GET['AuthToken'])?$_GET['AuthToken']:exit('param is error');
 	$userrow=$DB->getRow("SELECT * FROM pre_user WHERE uid='{$uid}' limit 1");
 	if(!$userrow)sysmsg('uid不存在');
-	if($AuthToken!=$userrow['certtoken'])sysmsg('AuthToken不正确');
+	if(!is_string($AuthToken) || $AuthToken === '' || strlen($AuthToken)>256 || !is_string($userrow['certtoken']) || $userrow['certtoken'] === '' || !hash_equals($userrow['certtoken'], $AuthToken))sysmsg('AuthToken不正确');
 
 	$qcloud = new \lib\QcloudFaceid($conf['cert_qcloudid'], $conf['cert_qcloudkey']);
 	$result = $qcloud->GetRealNameAuthResult($AuthToken);

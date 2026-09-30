@@ -1604,50 +1604,7 @@ function getScanPayType($authCode){
 }
 function check_proxy($url)
 {
-	global $conf;
-	$ch=curl_init($url);
-	$proxy_server = $conf['proxy_server'];
-	$proxy_port = intval($conf['proxy_port']);
-	if($conf['proxy_type'] == 'https'){
-		$proxy_type = CURLPROXY_HTTPS;
-	}elseif($conf['proxy_type'] == 'sock4'){
-		$proxy_type = CURLPROXY_SOCKS4;
-	}elseif($conf['proxy_type'] == 'sock5'){
-		$proxy_type = CURLPROXY_SOCKS5;
-	}else{
-		$proxy_type = CURLPROXY_HTTP;
-	}
-	curl_setopt($ch, CURLOPT_PROXYAUTH, CURLAUTH_BASIC);
-	curl_setopt($ch, CURLOPT_PROXY, $proxy_server);
-	curl_setopt($ch, CURLOPT_PROXYPORT, $proxy_port);
-	if(!empty($conf['proxy_user']) && !empty($conf['proxy_pwd'])){
-		$proxy_userpwd = $conf['proxy_user'].':'.$conf['proxy_pwd'];
-		curl_setopt($ch, CURLOPT_PROXYUSERPWD, $proxy_userpwd);
-	}
-	curl_setopt($ch, CURLOPT_PROXYTYPE, $proxy_type);
-	$httpheader[] = "Accept: */*";
-	$httpheader[] = "Accept-Language: zh-CN,zh;q=0.8";
-	$httpheader[] = "Connection: close";
-	curl_setopt($ch, CURLOPT_HTTPHEADER, $httpheader);
-	curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
-	curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
-	curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-	curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/78.0.3904.108 Safari/537.36');
-	curl_setopt($ch, CURLOPT_TIMEOUT, 3);
-	curl_exec($ch);
-	$errno = curl_errno($ch);
-	if($errno){
-		$errmsg = curl_error($ch);
-		curl_close($ch);
-		throw new Exception($errmsg);
-	}
-	$httpCode = curl_getinfo($ch,CURLINFO_HTTP_CODE);
-	curl_close($ch);
-	if($httpCode >= 200 && $httpCode < 400){
-		return true;
-	}else{
-		throw new Exception('HTTP状态码异常：'.$httpCode);
-	}
+	throw new Exception('安全策略禁止配置代理及代理检测：代理远端解析无法保证 DNS 固定与 SSRF 防护，请关闭配置代理后使用直连。');
 }
 
 function showstar($num){
